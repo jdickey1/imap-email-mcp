@@ -4,6 +4,23 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that p
 
 ## Quick Start
 
+### Claude Code (CLI)
+
+**Important:** Claude Code CLI uses `claude mcp add`, not config files.
+
+```bash
+claude mcp add imap-email -s user \
+  -e IMAP_USER=you@example.com \
+  -e IMAP_PASSWORD=your-app-password \
+  -e IMAP_HOST=imap.example.com \
+  -- npx -y imap-email-mcp
+```
+
+Verify with:
+```bash
+claude mcp list
+```
+
 ### Cursor
 
 Add new MCP server:
@@ -20,7 +37,9 @@ IMAP_HOST=imap.example.com
 
 ### Claude Desktop
 
-Add to your `claude_desktop_config.json`:
+Add to your config file:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -36,12 +55,6 @@ Add to your `claude_desktop_config.json`:
     }
   }
 }
-```
-
-### Claude Code (CLI)
-
-```bash
-claude mcp add imap-email -e IMAP_USER=you@example.com -e IMAP_PASSWORD=your-app-password -e IMAP_HOST=imap.example.com -- npx -y imap-email-mcp
 ```
 
 ## Features
