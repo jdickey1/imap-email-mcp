@@ -5,7 +5,7 @@
   "type": "module",
   "main": "index.js",
   "bin": {
-    "imap-email-mcp": "./index.js"
+    "imap-email-mcp": "index.js"
   },
   "scripts": {
     "start": "node index.js"

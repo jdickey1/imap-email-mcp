@@ -1,6 +1,48 @@
 # IMAP Email MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides email capabilities to Claude Code and other MCP-compatible AI tools. Connect to any IMAP/SMTP email provider to read, search, compose, and manage emails directly from your AI assistant.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides email capabilities to Claude Code, Claude Desktop, Cursor, and other MCP-compatible AI tools. Connect to any IMAP/SMTP email provider to read, search, compose, and manage emails directly from your AI assistant.
+
+## Quick Start
+
+### Cursor
+
+Add new MCP server:
+- **Name:** `imap-email`
+- **Type:** `command`
+- **Command:** `npx -y imap-email-mcp`
+
+Then set environment variables in Cursor's MCP settings:
+```
+IMAP_USER=your-email@example.com
+IMAP_PASSWORD=your-app-password
+IMAP_HOST=imap.example.com
+```
+
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "imap-email": {
+      "command": "npx",
+      "args": ["-y", "imap-email-mcp"],
+      "env": {
+        "IMAP_USER": "your-email@example.com",
+        "IMAP_PASSWORD": "your-app-password",
+        "IMAP_HOST": "imap.example.com"
+      }
+    }
+  }
+}
+```
+
+### Claude Code (CLI)
+
+```bash
+claude mcp add imap-email -e IMAP_USER=you@example.com -e IMAP_PASSWORD=your-app-password -e IMAP_HOST=imap.example.com -- npx -y imap-email-mcp
+```
 
 ## Features
 
@@ -12,175 +54,44 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that p
 - **Delete emails** - Remove unwanted messages
 - **Multi-provider support** - Works with Gmail, Outlook, Yahoo, Fastmail, and any standard IMAP provider
 
-## Installation
-
-### Option 1: Clone and run locally
-
-```bash
-git clone https://github.com/jdickey1/imap-email-mcp.git
-cd imap-email-mcp
-npm install
-```
-
-### Option 2: Install globally via npm
-
-```bash
-npm install -g imap-email-mcp
-```
-
 ## Configuration
 
-### Environment Variables
+### Required Environment Variables
 
-Create a `.env` file or set these environment variables:
+| Variable | Description |
+|----------|-------------|
+| `IMAP_USER` | Your email address |
+| `IMAP_PASSWORD` | App password (not your main password!) |
+| `IMAP_HOST` | IMAP server hostname |
 
-```bash
-# Required
-IMAP_USER=your-email@example.com
-IMAP_PASSWORD=your-app-password
-IMAP_HOST=imap.example.com
+### Optional Environment Variables
 
-# Optional (with defaults)
-IMAP_PORT=993
-IMAP_TLS=true
-IMAP_AUTH_TIMEOUT=10000
-IMAP_TLS_REJECT_UNAUTHORIZED=true
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IMAP_PORT` | `993` | IMAP port |
+| `IMAP_TLS` | `true` | Use TLS |
+| `SMTP_HOST` | Same as IMAP_HOST | SMTP server hostname |
+| `SMTP_PORT` | `465` | SMTP port |
+| `SMTP_SECURE` | `true` | Use secure SMTP |
 
-# SMTP (defaults to IMAP settings if not specified)
-SMTP_HOST=smtp.example.com
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=your-email@example.com
-SMTP_PASSWORD=your-app-password
-```
+### Provider Settings
 
-### Provider-Specific Settings
-
-<details>
-<summary><strong>Gmail</strong></summary>
-
-1. Enable 2-Factor Authentication on your Google account
-2. Generate an [App Password](https://myaccount.google.com/apppasswords)
-3. Use these settings:
-
-```bash
-IMAP_USER=your-email@gmail.com
-IMAP_PASSWORD=your-16-char-app-password
-IMAP_HOST=imap.gmail.com
-SMTP_HOST=smtp.gmail.com
-```
-
-</details>
-
-<details>
-<summary><strong>Outlook / Microsoft 365</strong></summary>
-
-1. Enable 2-Factor Authentication
-2. Generate an App Password in your Microsoft account security settings
-3. Use these settings:
-
-```bash
-IMAP_USER=your-email@outlook.com
-IMAP_PASSWORD=your-app-password
-IMAP_HOST=outlook.office365.com
-SMTP_HOST=smtp.office365.com
-SMTP_PORT=587
-SMTP_SECURE=false
-```
-
-</details>
-
-<details>
-<summary><strong>Yahoo Mail</strong></summary>
-
-1. Enable 2-Factor Authentication
-2. Generate an App Password
-3. Use these settings:
-
-```bash
-IMAP_USER=your-email@yahoo.com
-IMAP_PASSWORD=your-app-password
-IMAP_HOST=imap.mail.yahoo.com
-SMTP_HOST=smtp.mail.yahoo.com
-```
-
-</details>
-
-<details>
-<summary><strong>Fastmail</strong></summary>
-
-1. Generate an App Password in Settings > Privacy & Security
-2. Use these settings:
-
-```bash
-IMAP_USER=your-email@fastmail.com
-IMAP_PASSWORD=your-app-password
-IMAP_HOST=imap.fastmail.com
-SMTP_HOST=smtp.fastmail.com
-```
-
-</details>
-
-<details>
-<summary><strong>Custom/Self-hosted</strong></summary>
-
-Use your mail server's IMAP and SMTP settings:
-
-```bash
-IMAP_USER=you@yourdomain.com
-IMAP_PASSWORD=your-password
-IMAP_HOST=mail.yourdomain.com
-SMTP_HOST=mail.yourdomain.com
-```
-
-</details>
-
-## Adding to Claude Code
-
-### Method 1: Using the CLI
-
-```bash
-claude mcp add imap-email -- node /path/to/imap-email-mcp/index.js
-```
-
-With environment variables:
-
-```bash
-claude mcp add imap-email \
-  -e IMAP_USER=your-email@example.com \
-  -e IMAP_PASSWORD=your-app-password \
-  -e IMAP_HOST=imap.example.com \
-  -- node /path/to/imap-email-mcp/index.js
-```
-
-### Method 2: Manual configuration
-
-Add to your `~/.claude/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "imap-email": {
-      "command": "node",
-      "args": ["/path/to/imap-email-mcp/index.js"],
-      "env": {
-        "IMAP_USER": "your-email@example.com",
-        "IMAP_PASSWORD": "your-app-password",
-        "IMAP_HOST": "imap.example.com"
-      }
-    }
-  }
-}
-```
+| Provider | IMAP_HOST | SMTP_HOST | Notes |
+|----------|-----------|-----------|-------|
+| **Gmail** | `imap.gmail.com` | `smtp.gmail.com` | [Create App Password](https://myaccount.google.com/apppasswords) |
+| **Outlook** | `outlook.office365.com` | `smtp.office365.com` | Use port 587, SMTP_SECURE=false |
+| **Yahoo** | `imap.mail.yahoo.com` | `smtp.mail.yahoo.com` | Generate App Password in settings |
+| **Fastmail** | `imap.fastmail.com` | `smtp.fastmail.com` | App Password from Privacy & Security |
+| **iCloud** | `imap.mail.me.com` | `smtp.mail.me.com` | [Generate App Password](https://appleid.apple.com/) |
 
 ## Available Tools
 
 | Tool | Description |
 |------|-------------|
 | `list_folders` | List all email folders/mailboxes |
-| `list_emails` | List emails with optional filtering (folder, limit, unread only, since date) |
+| `list_emails` | List emails with optional filtering |
 | `get_email` | Get full email content by UID |
-| `search_emails` | Search emails by subject, sender, or body text |
+| `search_emails` | Search by subject, sender, or body |
 | `list_drafts` | List all draft emails |
 | `get_draft` | Get a specific draft by UID |
 | `create_draft` | Create a new email draft |
@@ -190,40 +101,55 @@ Add to your `~/.claude/mcp.json`:
 
 ## Usage Examples
 
-Once configured, you can use natural language with Claude Code:
+Once configured, use natural language:
 
 - "Check my inbox for unread emails"
 - "Search for emails from john@example.com"
 - "Create a draft email to sarah@example.com about the meeting tomorrow"
 - "Show me my drafts folder"
-- "Delete the email with UID 12345"
 
 ## Security Best Practices
 
-1. **Use App Passwords** - Never use your main account password. Generate app-specific passwords.
-2. **Environment Variables** - Store credentials in environment variables, not in code.
-3. **Review Before Sending** - Consider using `create_draft` instead of `send_email` to review messages before sending.
-4. **Limit Permissions** - If your email provider supports it, limit the app password's scope.
+1. **Use App Passwords** - Never use your main account password
+2. **Environment Variables** - Store credentials in env vars, not in code
+3. **Review Before Sending** - Use `create_draft` instead of `send_email` to review first
 
 ## Troubleshooting
 
-### "Authentication failed"
+**Authentication failed**
 - Verify your app password is correct
 - Ensure IMAP access is enabled in your email provider's settings
-- Check if 2FA is required for app passwords
 
-### "Drafts folder not found"
-The server automatically tries common folder names (`Drafts`, `INBOX.Drafts`, `[Gmail]/Drafts`). If your provider uses a different name, you may need to modify the `findDraftsFolder` function.
+**Drafts folder not found**
+- The server tries common names (`Drafts`, `INBOX.Drafts`, `[Gmail]/Drafts`)
+- Your provider may use a different folder name
 
-### "Connection timeout"
+**Connection timeout**
 - Check your `IMAP_HOST` is correct
-- Verify port 993 (or your configured port) is not blocked
-- Try increasing `IMAP_AUTH_TIMEOUT`
+- Verify port 993 is not blocked by firewall
 
-## Contributing
+## Alternative Installation
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+### Install globally
+```bash
+npm install -g imap-email-mcp
+imap-email-mcp
+```
+
+### Clone and run
+```bash
+git clone https://github.com/jdickey1/imap-email-mcp.git
+cd imap-email-mcp
+npm install
+node index.js
+```
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+## Links
+
+- [npm package](https://www.npmjs.com/package/imap-email-mcp)
+- [GitHub repo](https://github.com/jdickey1/imap-email-mcp)
+- [MCP Protocol](https://modelcontextprotocol.io/)
