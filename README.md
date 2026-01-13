@@ -11,14 +11,24 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that p
 ```bash
 claude mcp add imap-email -s user \
   -e IMAP_USER=you@example.com \
-  -e IMAP_PASSWORD=your-app-password \
+  -e IMAP_PASSWORD='your-app-password' \
   -e IMAP_HOST=imap.example.com \
   -- npx -y imap-email-mcp
 ```
 
+> **Note:** If your password contains special shell characters (`%`, `^`, `*`, `$`, `!`, etc.), wrap it in single quotes as shown above.
+
+> **Note:** Restart Claude Code after adding an MCP for the new tools to become available.
+
 Verify with:
 ```bash
 claude mcp list
+claude mcp get imap-email
+```
+
+Remove with:
+```bash
+claude mcp remove imap-email -s user
 ```
 
 ### Cursor
