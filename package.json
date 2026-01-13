@@ -1,0 +1,50 @@
+{
+  "name": "imap-email-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Claude Code that provides email capabilities through IMAP/SMTP. Read, search, compose, and manage emails from any IMAP provider.",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "imap-email-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "anthropic",
+    "email",
+    "imap",
+    "smtp",
+    "mail",
+    "inbox",
+    "gmail",
+    "outlook",
+    "email-client",
+    "ai-tools",
+    "llm-tools"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jdickey1/imap-email-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jdickey1/imap-email-mcp/issues"
+  },
+  "homepage": "https://github.com/jdickey1/imap-email-mcp#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "imap-simple": "^5.1.0",
+    "mailparser": "^3.7.2",
+    "nodemailer": "^6.9.16"
+  }
+}
