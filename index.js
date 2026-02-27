@@ -395,14 +395,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const connection = await connectIMAP();
 
         try {
-          await connection.openBox(folder);
+          const box = await connection.openBox(folder);
+          const totalMessages = box.messages.total;
 
-          let searchCriteria = ['ALL'];
+          let searchCriteria = [];
           if (args.unseen_only) {
-            searchCriteria = ['UNSEEN'];
+            searchCriteria.push('UNSEEN');
           }
           if (args.since_date) {
-            searchCriteria = [['SINCE', args.since_date]];
+            searchCriteria.push(['SINCE', args.since_date]);
+          }
+
+          // When no filters are applied, use a sequence range to fetch only
+          // the most recent messages instead of fetching the entire mailbox.
+          // This avoids downloading headers for every message in large inboxes.
+          if (searchCriteria.length === 0) {
+            if (totalMessages > 0) {
+              const start = Math.max(1, totalMessages - limit + 1);
+              searchCriteria = [`${start}:${totalMessages}`];
+            } else {
+              searchCriteria = ['ALL'];
+            }
           }
 
           const fetchOptions = {
