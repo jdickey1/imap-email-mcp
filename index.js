@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 
 /**
  * IMAP Email MCP Server for Claude Code
@@ -766,14 +766,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
 
             await connection.append(message, { mailbox: sentFolder, flags: ['\\Seen'] });
+            sentCopyStatus = "ok";
           } finally {
             connection.end();
           }
         } catch (appendError) {
           sentCopyStatus = `failed: ${appendError.message}`;
           console.error('[imap-email-mcp] sent-copy append failed:', appendError.message);
-        } // end catch
-        } // end if SAVE_TO_SENT
+        } // end SAVE_TO_SENT block
 
         return {
           content: [{
