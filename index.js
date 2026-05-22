@@ -319,6 +319,48 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ['uid']
         }
+      },
+      {
+        name: 'move_email',
+        description: 'Move an email from one folder to another by UID. Useful for moving spam to Junk, archiving, or organizing into custom folders without losing the message.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            uid: {
+              type: 'number',
+              description: 'UID of the email to move'
+            },
+            source_folder: {
+              type: 'string',
+              description: 'Folder the email currently lives in (default: INBOX)',
+              default: 'INBOX'
+            },
+            target_folder: {
+              type: 'string',
+              description: 'Destination folder (e.g. "INBOX.Junk", "INBOX.Archive"). Use list_folders to see available folders.'
+            }
+          },
+          required: ['uid', 'target_folder']
+        }
+      },
+      {
+        name: 'mark_as_seen',
+        description: 'Mark an email as read by setting the \\Seen flag, without changing its location or content. Use for clearing unread count on legitimate-but-stale emails (newsletters, old notifications).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            uid: {
+              type: 'number',
+              description: 'UID of the email to mark as read'
+            },
+            folder: {
+              type: 'string',
+              description: 'Folder containing the email (default: INBOX)',
+              default: 'INBOX'
+            }
+          },
+          required: ['uid']
+        }
       }
     ]
   };
@@ -717,6 +759,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           await connection.closeBox(true); // Expunge
 
           return { content: [{ type: 'text', text: 'Email deleted successfully' }] };
+        } finally {
+          connection.end();
+        }
+      }
+
+      case 'move_email': {
+        const sourceFolder = args.source_folder || 'INBOX';
+        const targetFolder = args.target_folder;
+        if (!targetFolder) {
+          return { content: [{ type: 'text', text: 'Error: target_folder is required' }], isError: true };
+        }
+        const connection = await connectIMAP();
+
+        try {
+          await connection.openBox(sourceFolder);
+          await connection.moveMessage(args.uid, targetFolder);
+
+          return { content: [{ type: 'text', text: `Email ${args.uid} moved from "${sourceFolder}" to "${targetFolder}"` }] };
+        } finally {
+          connection.end();
+        }
+      }
+
+      case 'mark_as_seen': {
+        const folder = args.folder || 'INBOX';
+        const connection = await connectIMAP();
+
+        try {
+          await connection.openBox(folder);
+          await connection.addFlags(args.uid, ['\\Seen']);
+
+          return { content: [{ type: 'text', text: `Email ${args.uid} marked as seen in "${folder}"` }] };
         } finally {
           connection.end();
         }
