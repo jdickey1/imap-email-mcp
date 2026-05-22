@@ -224,6 +224,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             bcc: {
               type: 'string',
               description: 'BCC recipients, comma-separated'
+            },
+            reply_to_uid: {
+              type: 'number',
+              description: 'UID of the original message to reply to. When set, In-Reply-To and References headers are added so the draft threads correctly in mail clients. Subject is auto-prefixed with "Re: " if not already.'
+            },
+            reply_to_folder: {
+              type: 'string',
+              description: 'Folder containing the original message (default: INBOX). Only used when reply_to_uid is set.',
+              default: 'INBOX'
             }
           },
           required: ['to', 'subject']
@@ -262,6 +271,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             bcc: {
               type: 'string',
               description: 'BCC recipients'
+            },
+            reply_to_uid: {
+              type: 'number',
+              description: 'UID of the original message to reply to (adds In-Reply-To/References headers + Re: prefix).'
+            },
+            reply_to_folder: {
+              type: 'string',
+              description: 'Folder containing the original message (default: INBOX).',
+              default: 'INBOX'
             }
           },
           required: ['uid', 'to', 'subject']
@@ -296,6 +314,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             bcc: {
               type: 'string',
               description: 'BCC recipients'
+            },
+            reply_to_uid: {
+              type: 'number',
+              description: 'UID of the original message to reply to. When set, In-Reply-To and References headers are added so the sent message threads correctly. Subject is auto-prefixed with "Re: " if not already.'
+            },
+            reply_to_folder: {
+              type: 'string',
+              description: 'Folder containing the original message (default: INBOX).',
+              default: 'INBOX'
             }
           },
           required: ['to', 'subject']
@@ -323,6 +350,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     ]
   };
 });
+
+// Helper: fetch the RFC 2822 Message-ID of an existing message by UID.
+// Returns the raw <id@host> string (including angle brackets) or null if not found.
+// Used for setting In-Reply-To / References on reply drafts so mail clients thread correctly.
+async function fetchMessageIdByUid(connection, folder, uid) {
+  await connection.openBox(folder);
+  const messages = await connection.search(
+    [['UID', uid]],
+    { bodies: ['HEADER.FIELDS (MESSAGE-ID)'], struct: false }
+  );
+  if (messages.length === 0) return null;
+  const header = messages[0].parts.find(p => p.which.includes('HEADER'))?.body || {};
+  const messageId = header['message-id']?.[0];
+  if (!messageId) return null;
+  // Ensure angle-bracketed
+  return messageId.startsWith('<') ? messageId : `<${messageId}>`;
+}
 
 // Helper function to connect to IMAP
 async function connectIMAP() {
@@ -592,6 +636,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const connection = await connectIMAP();
 
         try {
+          // If replying, fetch original Message-ID and auto-prefix subject with "Re: "
+          let inReplyToHeader = null;
+          let subject = args.subject;
+          if (args.reply_to_uid) {
+            const replyFolder = args.reply_to_folder || 'INBOX';
+            inReplyToHeader = await fetchMessageIdByUid(connection, replyFolder, args.reply_to_uid);
+            if (!subject.match(/^re:\s/i)) subject = `Re: ${subject}`;
+          }
+
           const draftsFolder = await findDraftsFolder(connection);
 
           // Build RFC 2822 compliant email message
@@ -601,8 +654,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           message += `To: ${args.to}\r\n`;
           if (args.cc) message += `Cc: ${args.cc}\r\n`;
           if (args.bcc) message += `Bcc: ${args.bcc}\r\n`;
-          message += `Subject: ${args.subject}\r\n`;
+          message += `Subject: ${subject}\r\n`;
           message += `Date: ${new Date().toUTCString()}\r\n`;
+          if (inReplyToHeader) {
+            message += `In-Reply-To: ${inReplyToHeader}\r\n`;
+            message += `References: ${inReplyToHeader}\r\n`;
+          }
           message += `MIME-Version: 1.0\r\n`;
 
           if (args.html) {
@@ -631,6 +688,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const connection = await connectIMAP();
 
         try {
+          // If replying, fetch original Message-ID and auto-prefix subject (do this BEFORE opening drafts folder)
+          let inReplyToHeader = null;
+          let subject = args.subject;
+          if (args.reply_to_uid) {
+            const replyFolder = args.reply_to_folder || 'INBOX';
+            inReplyToHeader = await fetchMessageIdByUid(connection, replyFolder, args.reply_to_uid);
+            if (!subject.match(/^re:\s/i)) subject = `Re: ${subject}`;
+          }
+
           const draftsFolder = await findDraftsFolder(connection);
           await connection.openBox(draftsFolder);
 
@@ -647,8 +713,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           message += `To: ${args.to}\r\n`;
           if (args.cc) message += `Cc: ${args.cc}\r\n`;
           if (args.bcc) message += `Bcc: ${args.bcc}\r\n`;
-          message += `Subject: ${args.subject}\r\n`;
+          message += `Subject: ${subject}\r\n`;
           message += `Date: ${new Date().toUTCString()}\r\n`;
+          if (inReplyToHeader) {
+            message += `In-Reply-To: ${inReplyToHeader}\r\n`;
+            message += `References: ${inReplyToHeader}\r\n`;
+          }
           message += `MIME-Version: 1.0\r\n`;
 
           if (args.html) {
@@ -681,16 +751,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
 
+        // If replying, fetch original Message-ID via a short-lived IMAP connection,
+        // then auto-prefix subject with "Re: ". nodemailer handles the reply headers natively.
+        let inReplyToHeader = null;
+        let subject = args.subject;
+        if (args.reply_to_uid) {
+          const replyFolder = args.reply_to_folder || 'INBOX';
+          const conn = await connectIMAP();
+          try {
+            inReplyToHeader = await fetchMessageIdByUid(conn, replyFolder, args.reply_to_uid);
+          } finally {
+            conn.end();
+          }
+          if (!subject.match(/^re:\s/i)) subject = `Re: ${subject}`;
+        }
+
         const transporter = nodemailer.createTransport(SMTP_CONFIG);
 
         const mailOptions = {
           from: SMTP_CONFIG.auth.user,
           to: args.to,
-          subject: args.subject,
+          subject,
           text: args.body,
           html: args.html,
           cc: args.cc,
-          bcc: args.bcc
+          bcc: args.bcc,
+          ...(inReplyToHeader ? { inReplyTo: inReplyToHeader, references: inReplyToHeader } : {})
         };
 
         const info = await transporter.sendMail(mailOptions);
