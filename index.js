@@ -49,15 +49,17 @@ const SMTP_CONFIG = {
   }
 };
 
-// Watchdog: force-exit after 30s of inactivity so hung IMAP connections don't
-// leave the process alive between Claude Code tool calls.
+// Watchdog: force-exit after idle period with no tool activity so hung IMAP
+// connections don't leave the process alive between Claude Code tool calls.
+// Default 10 minutes; override with IMAP_IDLE_TIMEOUT (ms).
+const IDLE_TIMEOUT_MS = parseInt(process.env.IMAP_IDLE_TIMEOUT || '600000');
 let watchdogTimer = null;
 function armWatchdog() {
   if (watchdogTimer) clearTimeout(watchdogTimer);
   watchdogTimer = setTimeout(() => {
-    console.error('[imap-email-mcp] idle 30s with no tool activity - exiting');
+    console.error(`[imap-email-mcp] idle ${IDLE_TIMEOUT_MS / 1000}s with no tool activity - exiting`);
     process.exit(0);
-  }, 30_000);
+  }, IDLE_TIMEOUT_MS);
   watchdogTimer.unref();
 }
 
@@ -829,7 +831,9 @@ async function main() {
     console.error('[imap-email-mcp] stdin closed - exiting');
     process.exit(0);
   });
-  armWatchdog();
+  // No startup watchdog — stdio lifecycle is managed by the MCP client (Claude Code).
+  // The watchdog in CallToolRequestSchema still fires after IDLE_TIMEOUT_MS of no
+  // tool activity to clean up any hung IMAP connections.
 }
 
 main().catch(console.error);

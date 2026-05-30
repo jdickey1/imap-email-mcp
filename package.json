@@ -45,6 +45,6 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "imap-simple": "^5.1.0",
     "mailparser": "^3.7.2",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^6.10.1"
   }
 }
