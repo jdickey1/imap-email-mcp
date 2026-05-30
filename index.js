@@ -51,8 +51,8 @@ const SMTP_CONFIG = {
 
 // Watchdog: force-exit after idle period with no tool activity so hung IMAP
 // connections don't leave the process alive between Claude Code tool calls.
-// Default 10 minutes; override with IMAP_IDLE_TIMEOUT (ms).
-const IDLE_TIMEOUT_MS = parseInt(process.env.IMAP_IDLE_TIMEOUT || '600000');
+// Default 1 hour; override with IMAP_IDLE_TIMEOUT (ms).
+const IDLE_TIMEOUT_MS = parseInt(process.env.IMAP_IDLE_TIMEOUT || '3600000');
 let watchdogTimer = null;
 function armWatchdog() {
   if (watchdogTimer) clearTimeout(watchdogTimer);
