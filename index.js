@@ -18,6 +18,7 @@ import {
 import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
+import fs from 'fs';
 
 // Configuration from environment variables
 const IMAP_CONFIG = {
@@ -28,11 +29,15 @@ const IMAP_CONFIG = {
     port: parseInt(process.env.IMAP_PORT || '993'),
     tls: process.env.IMAP_TLS !== 'false',
     authTimeout: parseInt(process.env.IMAP_AUTH_TIMEOUT || '10000'),
+    socketTimeout: parseInt(process.env.IMAP_SOCKET_TIMEOUT || '25000'),
     tlsOptions: {
       rejectUnauthorized: process.env.IMAP_TLS_REJECT_UNAUTHORIZED !== 'false'
     }
   }
 };
+
+// Set SMTP_SAVE_SENT=false to skip appending to Sent folder (e.g. Gmail auto-saves)
+const SAVE_TO_SENT = process.env.SMTP_SAVE_SENT !== 'false';
 
 const SMTP_CONFIG = {
   host: process.env.SMTP_HOST,
@@ -43,6 +48,20 @@ const SMTP_CONFIG = {
     pass: process.env.SMTP_PASSWORD || process.env.IMAP_PASSWORD
   }
 };
+
+// Watchdog: force-exit after idle period with no tool activity so hung IMAP
+// connections don't leave the process alive between Claude Code tool calls.
+// Default 1 hour; override with IMAP_IDLE_TIMEOUT (ms).
+const IDLE_TIMEOUT_MS = parseInt(process.env.IMAP_IDLE_TIMEOUT || '3600000');
+let watchdogTimer = null;
+function armWatchdog() {
+  if (watchdogTimer) clearTimeout(watchdogTimer);
+  watchdogTimer = setTimeout(() => {
+    console.error(`[imap-email-mcp] idle ${IDLE_TIMEOUT_MS / 1000}s with no tool activity - exiting`);
+    process.exit(0);
+  }, IDLE_TIMEOUT_MS);
+  watchdogTimer.unref();
+}
 
 // Validate required configuration
 function validateConfig() {
@@ -360,8 +379,28 @@ async function findDraftsFolder(connection) {
   return 'Drafts'; // Default fallback
 }
 
+
+async function findSentFolder(connection) {
+  const boxes = await connection.getBoxes();
+  const names = ['Sent', 'Sent Items', 'Sent Messages', 'INBOX.Sent',
+    '[Gmail]/Sent Mail', '[Google Mail]/Sent Mail', 'INBOX/Sent'];
+  for (const name of names) {
+    if (boxes[name]) return name;
+  }
+  const inbox = boxes.INBOX;
+  if (inbox) {
+    const ch = inbox.children;
+    if (ch) {
+      if (ch.Sent) return 'INBOX.Sent';
+      if (ch['Sent Items']) return 'INBOX.Sent Items';
+    }
+  }
+  return 'Sent';
+}
+
 // Tool handlers
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  armWatchdog();
   const { name, arguments: args } = request.params;
 
   try {
@@ -694,6 +733,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
 
         const info = await transporter.sendMail(mailOptions);
+        info.response = info.response + ' [MCP-PATCH-v7]';
+
+        // Append a copy to the Sent folder via IMAP (skipped if SMTP_SAVE_SENT=false)
+        let sentCopyStatus = 'skipped (SMTP_SAVE_SENT=false)';
+        let sentFolderUsed = 'n/a';
+        if (SAVE_TO_SENT) try {
+          const connection = await connectIMAP();
+          try {
+            const sentFolder = await findSentFolder(connection);
+            sentFolderUsed = sentFolder;
+            const boundary = `----=_Part_${Date.now()}`;
+            let message = '';
+            message += `From: ${IMAP_CONFIG.imap.user}\r\n`;
+            message += `To: ${args.to}\r\n`;
+            if (args.cc) message += `Cc: ${args.cc}\r\n`;
+            if (args.bcc) message += `Bcc: ${args.bcc}\r\n`;
+            message += `Subject: ${args.subject}\r\n`;
+            message += `Date: ${new Date().toUTCString()}\r\n`;
+            message += `MIME-Version: 1.0\r\n`;
+
+            if (args.html) {
+              message += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n\r\n`;
+              message += `--${boundary}\r\n`;
+              message += `Content-Type: text/plain; charset=utf-8\r\n\r\n`;
+              message += `${args.body || ''}\r\n`;
+              message += `--${boundary}\r\n`;
+              message += `Content-Type: text/html; charset=utf-8\r\n\r\n`;
+              message += `${args.html}\r\n`;
+              message += `--${boundary}--\r\n`;
+            } else {
+              message += `Content-Type: text/plain; charset=utf-8\r\n\r\n`;
+              message += `${args.body || ''}\r\n`;
+            }
+
+            await connection.append(message, { mailbox: sentFolder, flags: ['\\Seen'] });
+            sentCopyStatus = "ok";
+          } finally {
+            connection.end();
+          }
+        } catch (appendError) {
+          sentCopyStatus = `failed: ${appendError.message}`;
+          console.error('[imap-email-mcp] sent-copy append failed:', appendError.message);
+        } // end SAVE_TO_SENT block
 
         return {
           content: [{
@@ -701,7 +783,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: JSON.stringify({
               success: true,
               messageId: info.messageId,
-              response: info.response
+              response: info.response,
+              sentCopy: sentCopyStatus,
+              sentFolder: sentFolderUsed,
+              _patch: 'v4'
             }, null, 2)
           }]
         };
@@ -742,6 +827,13 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('IMAP Email MCP Server running on stdio');
+  process.stdin.on('end', () => {
+    console.error('[imap-email-mcp] stdin closed - exiting');
+    process.exit(0);
+  });
+  // No startup watchdog — stdio lifecycle is managed by the MCP client (Claude Code).
+  // The watchdog in CallToolRequestSchema still fires after IDLE_TIMEOUT_MS of no
+  // tool activity to clean up any hung IMAP connections.
 }
 
 main().catch(console.error);
