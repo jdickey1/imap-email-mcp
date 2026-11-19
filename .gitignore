@@ -25,5 +25,13 @@ npm-debug.log*
 dist/
 build/
 
-# Package manager locks (optional - uncomment if you want to include)
-# package-lock.json
+# Package manager locks: package-lock.json IS committed, so everyone gets the
+# same tested dependency versions (e.g. the pinned nodemailer).
+
+# Personal files the server creates or reads at runtime: never commit these
+signature.txt
+draft-threading.json
+
+# Local backups
+*.bak
+*.bak-*
