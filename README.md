@@ -64,7 +64,7 @@ This is a fork of [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-ema
 
    You can keep the password out of this file entirely; see [Keeping your password out of the config](#keeping-your-password-out-of-the-config).
 
-4. **Optional signature:** copy `signature.example.txt` to `signature.txt` (same folder) and edit it.
+4. **Optional signature:** copy `signature.example.txt` to `signature.txt` (same folder) and edit it. See [Signature](#signature).
 
 5. **Fully quit and reopen Claude Desktop** (including from the system tray). Settings are only read at startup.
 
@@ -89,12 +89,18 @@ Add an MCP server named `imap-email`, type `command`, command `node /full/path/t
 
 ### Without cloning (npx from GitHub)
 
-You can also point the command at this repo directly, without cloning:
+You can also let `npx` download and run this fork straight from GitHub, with no clone or `npm install`:
 ```json
 "command": "npx",
-"args": ["-y", "github:aylacullen/imap-email-mcp"]
+"args": ["--allow-git=all", "-y", "github:aylacullen/imap-email-mcp#v1.1.0"]
 ```
-This always runs the latest version of this repo. If you use a signature, set `SIGNATURE_FILE` to a full path (npx keeps the code in a temporary cache folder). Note: `npx -y imap-email-mcp` (without `github:`) installs the **original** package from npm, not this fork.
+- **`--allow-git=all` is required on npm 12 and newer**, which no longer installs packages from GitHub unless you allow it (you'd otherwise get an `EALLOWGIT` error). Older npm versions ignore the flag.
+- **`#v1.1.0` pins a specific release**, so the code only changes when you change that number. Leave it off to always run the newest version on `main`.
+- The first start takes a little longer while npx downloads and installs it.
+- On macOS, use the full path to `npx` (from `which npx`) as the `"command"`, for the same reason as `node` above.
+- Put your signature in `~/.imap-email-mcp/signature.txt` (see [Signature](#signature)).
+
+Note: `npx -y imap-email-mcp` (without `github:`) installs the **original** package from npm, not this fork.
 
 ## Configuration
 
@@ -129,11 +135,22 @@ All settings go in the `env` block of your MCP config.
 |---------|---------|-------------|
 | `FROM_NAME` | (none) | Name shown as the sender, e.g. `Jane Doe` → `Jane Doe <you@example.com>`. Keep it under ~18 characters so inbox lists don't cut it off |
 | `IMAP_PASSWORD_CREDENTIAL` | (none) | Name of a password saved in Windows Credential Manager, the macOS Keychain, or the Linux keyring, used instead of `IMAP_PASSWORD` (see below) |
-| `SIGNATURE_FILE` | `signature.txt` next to `index.js` | Text file whose contents are added to the end of new emails, drafts and replies. Edits apply immediately, no restart |
+| `SIGNATURE_FILE` | see [Signature](#signature) | Text file whose contents are added to the end of new emails, drafts and replies. Edits apply immediately, no restart |
+| `IMAP_MCP_DATA_DIR` | `~/.imap-email-mcp` | Folder for the server's own data (your signature, if you keep it there, and reply-draft threading notes) |
 | `ATTACHMENT_DIR` | `~/Downloads/Email Attachments` | Where `download_attachment` saves files (must be inside Downloads, or this folder) |
 | `ATTACHMENT_BLOCK_DIRS` | (none) | Extra folders that may never be attached, separated by `;` on Windows or `:` on macOS/Linux |
 
 **Restart your MCP client after changing any setting.** (Except the signature file, which is re-read every time.)
+
+### Signature
+
+The server adds your signature to the end of new emails, drafts and replies (above the quoted original in replies). It's skipped if the email already contains it, and you can ask for an email without it. It uses the first of these that exists:
+
+1. the file named by `SIGNATURE_FILE`
+2. `signature.txt` next to `index.js` (handy if you cloned the repo)
+3. `signature.txt` in `~/.imap-email-mcp/` (works for every install, including npx)
+
+Start from `signature.example.txt`. Your signature is never uploaded or included in updates.
 
 ### Provider settings
 
@@ -174,7 +191,7 @@ Proton Mail works through [Proton Mail Bridge](https://proton.me/mail/bridge), w
 **Proton notes**
 - **macOS:** Bridge may offer to add its certificate to your Keychain. That helps apps like Apple Mail, but Node doesn't use the Keychain for certificates, so you still need the exported `cert.pem` and `NODE_EXTRA_CA_CERTS`.
 - **Sender name:** emails sent directly use `FROM_NAME`. **Drafts** saved to Proton take your Proton display name instead (Proton → Settings → Identity and addresses), so set both to the same name.
-- **Reply drafts:** Proton strips threading headers from saved drafts. This server remembers them locally (`draft-threading.json`), so a reply draft sent with `send_draft` still lands in the right conversation. If you send it from the Proton app instead, Proton's own threading applies.
+- **Reply drafts:** Proton strips threading headers from saved drafts. This server remembers them locally (`~/.imap-email-mcp/draft-threading.json`), so a reply draft sent with `send_draft` still lands in the right conversation. If you send it from the Proton app instead, Proton's own threading applies.
 - If Bridge ever regenerates its certificate (e.g. after a reset), export `cert.pem` again to the same place.
 
 ## Keeping your password out of the config
@@ -274,12 +291,15 @@ What this protects against: the password no longer sits in a plain-text file tha
 
 ## Updating
 
+**Cloned:**
 ```bash
 cd imap-email-mcp
 git pull
 npm install
 ```
-Then restart your MCP client. Your `signature.txt` and settings are not touched by updates.
+**npx:** change the version in `#v1.1.0` to the new release (or, if you left it off, npx picks up the newest version on its own).
+
+Then restart your MCP client. Your signature and settings are not touched by updates.
 
 ## License and credits
 

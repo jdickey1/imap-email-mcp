@@ -27,6 +27,11 @@ Changes in this fork compared to the original [jdickey1/imap-email-mcp](https://
 - `IMAP_PASSWORD_CREDENTIAL`: read the password from the computer's password store instead of the config file: Windows Credential Manager, macOS Keychain, or the Linux Secret Service keyring (`secret-tool`). Includes `save-password.ps1` (Windows) and `save-password.sh` (macOS/Linux) to save it securely.
 - `SMTP_REQUIRE_TLS`: refuse to send unless SMTP upgrades to TLS.
 - `ATTACHMENT_DIR`, `ATTACHMENT_BLOCK_DIRS`.
+- `IMAP_MCP_DATA_DIR` (default `~/.imap-email-mcp`): per-user data folder for reply-draft threading notes and, optionally, `signature.txt`, so npx installs (whose code lives in npm's cache) keep them across updates. Notes from the old location next to `index.js` are still read.
+
+### npx
+- Runs straight from GitHub: `npx --allow-git=all -y github:aylacullen/imap-email-mcp#v1.1.0`. The `--allow-git=all` flag is needed on npm 12+, which disables installing from Git by default.
+- `package.json` now lists the files to include, so an install contains only the server and its helper scripts.
 
 ### Security
 - Upgraded nodemailer 6.10 → 10.3.1, fixing 22 published advisories (including address-parsing bugs that could deliver a reply to a different domain than shown).

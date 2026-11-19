@@ -135,12 +135,13 @@ function blockedDirsFor(platform, home, env) {
     .map(d => [d, 'a system folder']);
 }
 
-function attachmentBlockReason(realPath, { platform = process.platform, home = os.homedir(), env = process.env, serverDir = SERVER_DIR } = {}) {
+function attachmentBlockReason(realPath, { platform = process.platform, home = os.homedir(), env = process.env, serverDir = SERVER_DIR, dataDir = DATA_DIR } = {}) {
   const P = pathApi(platform), f = foldCase(platform);
   const extra = (env.ATTACHMENT_BLOCK_DIRS || '').split(platform === 'win32' ? ';' : ':').filter(Boolean);
   const blockedDirs = [
     ...blockedDirsFor(platform, home, env),
     [serverDir, 'the email server\'s own folder'],
+    [dataDir, 'the email server\'s data folder'],
     ...extra.map(d => [d, 'a blocked folder'])
   ].filter(([d]) => d);
   for (const [dir, label] of blockedDirs) {
@@ -338,13 +339,27 @@ function stripHtml(s) {
 // ---- Local additions (local.3): signature, previews, flags/moves, draft threading ----
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
-const SIGNATURE_FILE = process.env.SIGNATURE_FILE || path.join(SERVER_DIR, 'signature.txt');
-const THREADING_FILE = path.join(SERVER_DIR, 'draft-threading.json');
+
+// Per-user data lives in a stable folder (default ~/.imap-email-mcp), not next to the code:
+// when run with npx, the code sits in npm's cache, which can be cleared or replaced on update.
+const DATA_DIR = path.resolve(process.env.IMAP_MCP_DATA_DIR || path.join(os.homedir(), '.imap-email-mcp'));
+const THREADING_FILE = path.join(DATA_DIR, 'draft-threading.json');
+const LEGACY_THREADING_FILE = path.join(SERVER_DIR, 'draft-threading.json'); // older versions kept it here
+
+// Signature: SIGNATURE_FILE if set, else signature.txt next to index.js (cloned installs),
+// else signature.txt in the data folder (works for npx installs too)
+function signatureFile() {
+  if (process.env.SIGNATURE_FILE) return process.env.SIGNATURE_FILE;
+  const candidates = [path.join(SERVER_DIR, 'signature.txt'), path.join(DATA_DIR, 'signature.txt')];
+  return candidates.find(p => fs.existsSync(p)) || null;
+}
 
 // Signature is read fresh each time, so editing signature.txt needs no restart
 function readSignature() {
+  const file = signatureFile();
+  if (!file) return null;
   try {
-    const s = fs.readFileSync(SIGNATURE_FILE, 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n').trim();
+    const s = fs.readFileSync(file, 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n').trim();
     return s || null;
   } catch {
     return null;
@@ -522,9 +537,13 @@ function collectUids(args) {
 
 // Threading info for reply drafts, kept locally because Proton strips those headers from drafts
 function loadThreading() {
-  try { return JSON.parse(fs.readFileSync(THREADING_FILE, 'utf8')); } catch { return {}; }
+  for (const file of [THREADING_FILE, LEGACY_THREADING_FILE]) {
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* try the next one */ }
+  }
+  return {};
 }
 function saveThreading(map) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000; // forget entries older than 90 days
   for (const [k, v] of Object.entries(map)) if (!v.savedAt || v.savedAt < cutoff) delete map[k];
   fs.writeFileSync(THREADING_FILE, JSON.stringify(map, null, 2));

@@ -7,6 +7,14 @@
   "bin": {
     "imap-email-mcp": "index.js"
   },
+  "files": [
+    "index.js",
+    "save-password.ps1",
+    "save-password.sh",
+    "signature.example.txt",
+    ".env.example",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "start": "node index.js"
   },
