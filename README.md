@@ -9,6 +9,7 @@ This is a fork of [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-ema
 - **Attachments**: send files, and save attachments from emails to your Downloads folder
 - **Real replies**: `reply_email` keeps the conversation threaded, quotes the original, supports reply-all, and can send now or save as a draft
 - **Send a saved draft** exactly as reviewed (`send_draft`), and reply drafts stay threaded
+- **Sent mail lands in your Sent folder** on every provider: detected automatically, no setting needed
 - **Organize**: mark read/unread, star/unstar, move or archive, several emails at once
 - **Better search**: dates, unread, starred, has-attachment, recipient, search every folder at once, with one-line previews
 - **Your name and signature**: a display name for the From line and an automatic signature from a text file
@@ -79,7 +80,7 @@ Add an MCP server named `imap-email`, type `command`, command `npx -y @aylaculle
 
 ### Pinning a version
 
-`npx -y @aylacullen/imap-email-mcp` always runs the newest release. To stay on a specific version until you choose to update, add it to the name, e.g. `"@aylacullen/imap-email-mcp@1.1.0"`.
+`npx -y @aylacullen/imap-email-mcp` always runs the newest release. To stay on a specific version until you choose to update, add it to the name, e.g. `"@aylacullen/imap-email-mcp@1.2.0"`.
 
 ### Alternative: run from a clone
 
@@ -94,7 +95,7 @@ Then use `"command": "node"` (on a Mac, the full path from `which node`) and `"a
 <details>
 <summary>Running straight from GitHub with npx</summary>
 
-`"args": ["--allow-git=all", "-y", "github:aylacullen/imap-email-mcp#v1.1.0"]` also works. `--allow-git=all` is required on npm 12 and newer, which no longer installs packages from GitHub unless you allow it (otherwise you get an `EALLOWGIT` error). Installing from npm, as above, is simpler and faster.
+`"args": ["--allow-git=all", "-y", "github:aylacullen/imap-email-mcp#v1.2.0"]` also works. `--allow-git=all` is required on npm 12 and newer, which no longer installs packages from GitHub unless you allow it (otherwise you get an `EALLOWGIT` error). Installing from npm, as above, is simpler and faster.
 </details>
 
 ## Configuration
@@ -121,6 +122,8 @@ All settings go in the `env` block of your MCP config.
 | `SMTP_PORT` | `465` | SMTP port |
 | `SMTP_SECURE` | `true` | Encrypt SMTP from the start (port 465). Set `false` for STARTTLS ports like 587 |
 | `SMTP_REQUIRE_TLS` | `false` | With `SMTP_SECURE=false`, refuse to send unless the connection upgrades to TLS. Recommended `true` |
+| `SMTP_SAVE_SENT` | `auto` | Keep a copy of sent mail in your Sent folder: `auto` works it out (see [Sent folder](#sent-folder)), `true` always saves a copy, `false` never does |
+| `IMAP_SENT_FOLDER` | (found automatically) | Name of your Sent folder, if it isn't detected |
 | `SMTP_USER` / `SMTP_PASSWORD` | same as IMAP | Only if SMTP uses different login details |
 | `NODE_EXTRA_CA_CERTS` | | Path to an extra certificate to trust (needed for Proton Mail Bridge, see below) |
 
@@ -131,7 +134,7 @@ All settings go in the `env` block of your MCP config.
 | `FROM_NAME` | (none) | Name shown as the sender, e.g. `Jane Doe` → `Jane Doe <you@example.com>`. Keep it under ~18 characters so inbox lists don't cut it off |
 | `IMAP_PASSWORD_CREDENTIAL` | (none) | Name of a password saved in Windows Credential Manager, the macOS Keychain, or the Linux keyring, used instead of `IMAP_PASSWORD` (see below) |
 | `SIGNATURE_FILE` | see [Signature](#signature) | Text file whose contents are added to the end of new emails, drafts and replies. Edits apply immediately, no restart |
-| `IMAP_MCP_DATA_DIR` | `~/.imap-email-mcp` | Folder for the server's own data (your signature, if you keep it there, and reply-draft threading notes) |
+| `IMAP_MCP_DATA_DIR` | `~/.imap-email-mcp` | Folder for the server's own data (your signature, if you keep it there, reply-draft threading notes, and the Sent-folder setting it worked out) |
 | `ATTACHMENT_DIR` | `~/Downloads/Email Attachments` | Where `download_attachment` saves files (must be inside Downloads, or this folder) |
 | `ATTACHMENT_BLOCK_DIRS` | (none) | Extra folders that may never be attached, separated by `;` on Windows or `:` on macOS/Linux |
 
@@ -157,6 +160,15 @@ Start from `signature.example.txt`. Your signature is never uploaded or included
 | **Fastmail** | `imap.fastmail.com` | `smtp.fastmail.com` | App Password from Privacy & Security |
 | **iCloud** | `imap.mail.me.com` | `smtp.mail.me.com` | `SMTP_PORT=587`, `SMTP_SECURE=false`, `SMTP_REQUIRE_TLS=true`; [App Password](https://appleid.apple.com/) |
 | **Proton Mail** | `127.0.0.1` | `127.0.0.1` | Requires Proton Mail Bridge, see below |
+
+### Sent folder
+
+Some email providers automatically file mail you send into your Sent folder (Gmail, Outlook, Proton Mail Bridge); many don't (Fastmail, Namecheap, Hostinger, most self-hosted servers). This server works out which kind you have, so sent mail always shows up in Sent, exactly once:
+
+- **Known providers** (Gmail, Outlook/Office 365, Proton Mail Bridge) are recognised immediately; nothing extra happens.
+- **Any other provider:** after your first email, the server checks your Sent folder in the background for about 25 seconds (sending isn't slowed down). If the email appears there, your provider handles it. If not, the server saves a copy itself, and from then on copies every email you send right away.
+
+It only checks once per account and remembers the answer in `~/.imap-email-mcp/sent-copy.json`. To force a choice instead, set `SMTP_SAVE_SENT` to `true` or `false`. To redo the check (e.g. after switching providers), delete that file.
 
 ## Proton Mail (via Proton Mail Bridge)
 
@@ -232,7 +244,7 @@ What this protects against: the password no longer sits in a plain-text file tha
 |------|--------------|
 | `list_folders` | List all folders (real paths, e.g. `Folders/Receipts`) |
 | `list_emails` | Newest emails in a folder, with previews and unread/starred/attachment flags |
-| `get_email` | Full email content, with numbered attachment list |
+| `get_email` | Full email content, with numbered attachment list (images embedded in the body, like signature logos, are marked `embedded`) |
 | `search_emails` | Search by subject, sender, recipient, body, any text, date range, unread, starred, has-attachment, or across all folders |
 | `mark_email` | Mark read/unread and star/unstar (one or many) |
 | `move_email` | Move or archive emails (one or many) |
@@ -287,11 +299,13 @@ What this protects against: the password no longer sits in a plain-text file tha
 
 **Drafts folder not found**: the server tries common names (`Drafts`, `INBOX.Drafts`, `[Gmail]/Drafts`); your provider may use a different one.
 
+**Sent mail shows up twice, or not at all**: set `SMTP_SAVE_SENT` to `false` (twice) or `true` (not at all) and restart, or delete `~/.imap-email-mcp/sent-copy.json` to let it check again. If your Sent folder isn't found, set `IMAP_SENT_FOLDER` to its name (see `list_folders`).
+
 **Connection timeout**: check `IMAP_HOST`/ports, and that the ports aren't blocked by a firewall (or that Bridge is running, for Proton).
 
 ## Updating
 
-**npx (the quick start setup):** nothing to do; npx picks up new releases on its own. If you pinned a version (`@aylacullen/imap-email-mcp@1.1.0`), change the number to the new release.
+**npx (the quick start setup):** nothing to do; npx picks up new releases on its own. If you pinned a version (`@aylacullen/imap-email-mcp@1.2.0`), change the number to the new release.
 
 **Cloned:**
 ```bash

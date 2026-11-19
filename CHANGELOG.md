@@ -2,6 +2,21 @@
 
 Changes in this fork compared to the original [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-email-mcp) 1.0.0.
 
+## 1.2.0
+
+### Sent mail is saved to the Sent folder, automatically
+- New `SMTP_SAVE_SENT` setting, default `auto`. Some providers file SMTP-sent mail into Sent themselves (Gmail, Outlook, Proton Mail Bridge); many don't (Fastmail, Namecheap, Hostinger, self-hosted Dovecot...), so mail sent through this server never appeared in Sent there (upstream issue #2).
+- `auto` recognises Gmail and Outlook/Office 365 by SMTP host and Proton Mail Bridge by its IMAP ID. For any other provider, after the first send it watches the Sent folder (in the background, ~25 s) for that email's Message-ID: if it appears, the provider saves sent mail; if not, a copy is saved and every later email is copied immediately. Decided once per account and stored in `~/.imap-email-mcp/sent-copy.json`.
+- `SMTP_SAVE_SENT=true` / `false` force the behaviour. `IMAP_SENT_FOLDER` names the Sent folder if it isn't found (by the `\Sent` flag, then common names).
+- Applies to `send_email`, `reply_email` (send) and `send_draft`; each reports what happened in a `sentCopy` field. A problem saving the copy is reported, never turned into a failed send.
+
+### Attachment detection
+- `has_attachment` (and the `has_attachment` search filter) now also counts files marked `inline` with a file name (e.g. `inline; filename=report.xlsx`), files named only on `Content-Type`, and text files other than the email body (e.g. `.csv`), per upstream issue #3. Images embedded in the email body by Content-ID (signature logos) are not counted, so ordinary emails aren't flagged.
+- `get_email` marks embedded images in its attachment list with `embedded: true`.
+
+### Testing
+- Attachment rules covered by 10 automated cases. Sent-folder handling verified live on Proton Mail Bridge (recognised, no duplicate copy), and the "provider doesn't save" path verified end to end against a real mailbox using a stand-in folder.
+
 ## 1.1.0
 
 ### New tools

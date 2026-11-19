@@ -407,16 +407,41 @@ function parseDay(value, label) {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-// Does a BODYSTRUCTURE contain a real attachment?
+// Is one MIME part a real attachment? (v1.2.0)
+// - anything marked "attachment"
+// - otherwise anything with a file name ("inline; filename=report.xlsx", or just a name on Content-Type),
+//   except the email's own text/plain or text/html body, and except images embedded in the body by
+//   Content-ID inside multipart/related (signature logos and the like)
+function partIsAttachment(part, parentMultipart) {
+  const disp = (part.disposition?.type || '').toLowerCase();
+  const dp = part.disposition?.params || {}, cp = part.params || {};
+  const filename = dp.filename || dp['filename*'] || cp.name || cp['name*'] || null;
+  const type = (part.type || '').toLowerCase(), sub = (part.subtype || '').toLowerCase();
+  if (disp === 'attachment') return true;
+  if (!filename) return false;
+  if (type === 'text' && (sub === 'plain' || sub === 'html')) return false;
+  if (type === 'image' && part.id && parentMultipart === 'related') return false;
+  return true;
+}
+
+// Does a BODYSTRUCTURE (node-imap format) contain a real attachment?
+// Multipart nodes are arrays whose first element describes the multipart (no partID); leaves have a partID.
 function structHasAttachment(struct) {
   let found = false;
-  (function walk(node) {
+  (function walk(node, parentMultipart) {
     if (found || !node) return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    const disp = node.disposition?.type?.toLowerCase();
-    const named = node.disposition?.params?.filename || node.params?.name;
-    if (disp === 'attachment' || (named && node.type && node.type.toLowerCase() !== 'text' && disp !== 'inline')) found = true;
-  })(struct);
+    if (Array.isArray(node)) {
+      const head = node[0];
+      if (head && !Array.isArray(head) && head.partID === undefined && node.length > 1) {
+        const sub = (head.type || '').toLowerCase(); // e.g. "mixed", "related", "alternative"
+        node.slice(1).forEach(child => walk(child, sub));
+      } else {
+        node.forEach(child => walk(child, parentMultipart));
+      }
+      return;
+    }
+    if (partIsAttachment(node, parentMultipart)) found = true;
+  })(struct, null);
   return found;
 }
 
@@ -553,6 +578,151 @@ function newMessageId() {
   return `<${crypto.randomUUID()}@${domain}>`;
 }
 
+// ---- v1.2.0: keep a copy of sent mail in the Sent folder (SMTP_SAVE_SENT) ----
+// Some providers file mail sent over SMTP into Sent by themselves (Gmail, Outlook, Proton Bridge);
+// many don't (Fastmail, Namecheap, Hostinger, most self-hosted servers).
+//   SMTP_SAVE_SENT=auto  (default) work it out once per account and remember it
+//   SMTP_SAVE_SENT=true  always save a copy        SMTP_SAVE_SENT=false  never save a copy
+// "auto": known self-saving providers are recognised immediately. For anyone else, after the first
+// send the server watches the Sent folder (in the background) for that email's Message-ID. If it shows
+// up, the provider saves sent mail; if not within ~25 s, a copy is saved, and every later email is
+// copied straight away. The decision is stored in the data folder (sent-copy.json).
+const SENT_DECISIONS_FILE = path.join(DATA_DIR, 'sent-copy.json');
+const SENT_CHECK_TIMEOUT_MS = 25000;
+const SENT_CHECK_INTERVAL_MS = 3000;
+// Only providers we're confident about; everything else is checked empirically
+const SELF_SAVING_SMTP_HOSTS = [/(^|\.)gmail\.com$/i, /(^|\.)googlemail\.com$/i, /^smtp\.office365\.com$/i, /^smtp-mail\.outlook\.com$/i];
+const SELF_SAVING_IMAP_SERVERS = [/proton mail bridge/i];
+
+function saveSentMode() {
+  const v = String(process.env.SMTP_SAVE_SENT || 'auto').trim().toLowerCase();
+  if (['true', 'yes', 'on', '1', 'always'].includes(v)) return 'always';
+  if (['false', 'no', 'off', '0', 'never'].includes(v)) return 'never';
+  return 'auto';
+}
+const sentDecisionKey = () => `${String(SMTP_CONFIG.auth.user || '').toLowerCase()}|${String(SMTP_CONFIG.host || '').toLowerCase()}`;
+function loadSentDecision() {
+  try { return JSON.parse(fs.readFileSync(SENT_DECISIONS_FILE, 'utf8'))[sentDecisionKey()] || null; } catch { return null; }
+}
+function saveSentDecision(decision, how) {
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(SENT_DECISIONS_FILE, 'utf8')); } catch { /* new file */ }
+  all[sentDecisionKey()] = { decision, how, decidedAt: new Date().toISOString() };
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(SENT_DECISIONS_FILE, JSON.stringify(all, null, 2));
+}
+
+// The Sent folder: IMAP_SENT_FOLDER if set, else the folder flagged \Sent, else a common name
+async function findSentFolder(connection) {
+  if (process.env.IMAP_SENT_FOLDER) return resolveFolder(connection, process.env.IMAP_SENT_FOLDER);
+  const boxes = await listBoxesDetailed(connection);
+  const byFlag = boxes.find(b => b.attribs.some(a => String(a).toLowerCase() === '\\sent'));
+  if (byFlag) return byFlag.path;
+  const names = ['Sent', 'Sent Items', 'Sent Messages', 'Sent Mail', '[Gmail]/Sent Mail', 'INBOX.Sent', 'INBOX/Sent', 'INBOX.Sent Items'];
+  for (const n of names) {
+    const hit = boxes.find(b => b.path.toLowerCase() === n.toLowerCase());
+    if (hit) return hit.path;
+  }
+  throw new Error('Could not find a Sent folder. Set IMAP_SENT_FOLDER to its name.');
+}
+
+// Is this a provider known to save sent mail itself? Returns a description, or null if unknown.
+async function knownSelfSavingProvider(connection) {
+  const host = SMTP_CONFIG.host || '';
+  if (SELF_SAVING_SMTP_HOSTS.some(re => re.test(host))) return host;
+  if (connection.imap.serverSupports('ID')) {
+    const id = await new Promise(res => connection.imap.id({ name: 'imap-email-mcp' }, (e, r) => res(e ? null : r)));
+    const name = id?.name || '';
+    if (SELF_SAVING_IMAP_SERVERS.some(re => re.test(name))) return name;
+  }
+  return null;
+}
+
+// Is there a message with this Message-ID among the newest messages in a folder?
+// (Fetches the headers directly instead of IMAP SEARCH HEADER, which some servers handle poorly.)
+async function folderHasMessageId(connection, folder, messageId, recent = 30) {
+  await connection.openBox(folder);
+  const uids = await uidSearch(connection, ['ALL']);
+  const msgs = await fetchByUids(connection, uids.slice(-recent), { bodies: ['HEADER.FIELDS (MESSAGE-ID)'] });
+  const want = String(messageId).trim().toLowerCase();
+  return msgs.some(m => String(m.parts[0]?.body?.['message-id']?.[0] || '').trim().toLowerCase() === want);
+}
+
+async function appendSentCopy(connection, folder, mailOptions) {
+  const raw = await buildRawMessage(mailOptions); // same Message-ID as the email that was sent
+  await connection.append(raw, { mailbox: folder, flags: ['\\Seen'] });
+}
+
+// First send on an account with an unknown provider: watch Sent, then decide (and save a copy if needed)
+async function detectSentBehaviour(mailOptions, { timeoutMs = SENT_CHECK_TIMEOUT_MS, intervalMs = SENT_CHECK_INTERVAL_MS } = {}) {
+  const connection = await connectIMAP();
+  try {
+    const folder = await findSentFolder(connection);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (await folderHasMessageId(connection, folder, mailOptions.messageId)) {
+        saveSentDecision('server', 'checked: the provider put the sent email in Sent itself');
+        return 'saved to Sent by your email provider';
+      }
+      if (Date.now() >= deadline) break;
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+    await appendSentCopy(connection, folder, mailOptions);
+    saveSentDecision('append', 'checked: the provider did not put the sent email in Sent');
+    return `copy saved to ${folder} (your provider doesn't do this itself, so future emails are copied right away)`;
+  } finally {
+    connection.end();
+  }
+}
+
+let sentDetection = null; // the one-time check in progress, if any
+
+// Called after every successful send. Returns a short status for the tool result. Never throws:
+// the email has already been sent, so a problem here is reported rather than failing the send.
+async function recordSentCopy(mailOptions, { waitForCheck = false } = {}) {
+  try {
+    const mode = saveSentMode();
+    if (mode === 'never') return 'not saved to Sent (SMTP_SAVE_SENT=false)';
+
+    const appendNow = async () => {
+      const connection = await connectIMAP();
+      try {
+        const folder = await findSentFolder(connection);
+        await appendSentCopy(connection, folder, mailOptions);
+        return `copy saved to ${folder}`;
+      } finally { connection.end(); }
+    };
+    if (mode === 'always') return await appendNow();
+
+    // auto
+    const known = loadSentDecision();
+    if (known?.decision === 'server') return 'saved to Sent by your email provider';
+    if (known?.decision === 'append') return await appendNow();
+
+    if (sentDetection) {
+      // A check is already running for an earlier email: act on its answer once it's in
+      const after = sentDetection.then(() => recordSentCopy(mailOptions));
+      return waitForCheck ? await after : 'will be saved to Sent if needed (a one-time check is in progress)';
+    }
+
+    const connection = await connectIMAP();
+    let provider;
+    try { provider = await knownSelfSavingProvider(connection); } finally { connection.end(); }
+    if (provider) {
+      saveSentDecision('server', `known provider: ${provider}`);
+      return `saved to Sent by your email provider (${provider})`;
+    }
+
+    sentDetection = detectSentBehaviour(mailOptions)
+      .catch(e => { console.error(`Sent-folder check failed: ${e.message}`); return `Sent-folder check failed: ${e.message}`; })
+      .finally(() => { sentDetection = null; });
+    if (waitForCheck) return await sentDetection;
+    return 'checking (one time only, about 25 seconds) whether your provider saves sent mail itself; if not, a copy is saved to Sent automatically';
+  } catch (e) {
+    return `sent, but could not save a copy to Sent: ${e.message}`;
+  }
+}
+
 const UIDS_SCHEMA = {
   uid: { type: 'number', description: 'Email UID' },
   uids: { type: 'array', items: { type: 'number' }, description: 'Several email UIDs (instead of, or along with, uid)' }
@@ -675,7 +845,7 @@ function validateConfig() {
 const server = new Server(
   {
     name: 'imap-email-mcp',
-    version: '1.1.0',
+    version: '1.2.0',
   },
   {
     capabilities: {
@@ -1245,7 +1415,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   index,
                   filename: a.filename,
                   contentType: a.contentType,
-                  size: a.size
+                  size: a.size,
+                  // true for images shown inside the email body (e.g. a signature logo), not separate files
+                  embedded: !!(a.related && a.cid)
                 }))
               }, null, 2)
             }]
@@ -1397,12 +1569,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }))
           };
 
+          mailOptions.messageId = newMessageId();
           const info = await nodemailer.createTransport(SMTP_CONFIG).sendMail(mailOptions);
 
           // Remove the sent draft and its saved threading info
           await connection.addFlags(draftUid, ['\\Deleted']);
           await connection.closeBox(true);
           if (saved) { delete threading[p.messageId]; saveThreading(threading); }
+          const sentCopy = await recordSentCopy(mailOptions);
 
           return {
             content: [{
@@ -1415,7 +1589,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 subject: mailOptions.subject,
                 attachments: mailOptions.attachments.map(a => a.filename),
                 threaded: !!inReplyTo,
-                draftRemoved: true
+                draftRemoved: true,
+                sentCopy
               }, null, 2)
             }]
           };
@@ -1575,10 +1750,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ...signedBody(args),
           cc: args.cc,
           bcc: args.bcc,
-          attachments: resolveAttachments(args.attachments)
+          attachments: resolveAttachments(args.attachments),
+          messageId: newMessageId()
         };
 
         const info = await transporter.sendMail(mailOptions);
+        const sentCopy = await recordSentCopy(mailOptions);
 
         return {
           content: [{
@@ -1587,7 +1764,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               success: true,
               messageId: info.messageId,
               response: info.response,
-              attachments: mailOptions.attachments?.map(a => a.filename)
+              attachments: mailOptions.attachments?.map(a => a.filename),
+              sentCopy
             }, null, 2)
           }]
         };
@@ -1668,10 +1846,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
           let result;
           if (args.mode === 'send') {
+            mailOptions.messageId = newMessageId(); // same ID on the sent email and any Sent copy
             const info = await nodemailer.createTransport(SMTP_CONFIG).sendMail(mailOptions);
             // Mark the original as answered (shows the replied arrow in Proton)
             try { await connection.addFlags(requireUid(args.uid), ['\\Answered']); } catch { /* not critical */ }
-            result = { success: true, sent: true, messageId: info.messageId, response: info.response };
+            const sentCopy = await recordSentCopy(mailOptions);
+            result = { success: true, sent: true, messageId: info.messageId, response: info.response, sentCopy };
           } else {
             const draftsFolder = await findDraftsFolder(connection);
             // Proton drops threading headers from drafts but keeps Message-ID, so remember them locally
@@ -1802,7 +1982,11 @@ async function main() {
 
 // Exported only so the platform-specific safety rules can be tested; the server starts as usual.
 // IMAP_MCP_NO_START=1 lets a test import this file without starting the server.
-export { attachmentBlockReason, isInside, readStoredPassword, requireUid };
+export {
+  attachmentBlockReason, isInside, readStoredPassword, requireUid,
+  partIsAttachment, structHasAttachment,
+  recordSentCopy, detectSentBehaviour, folderHasMessageId, findSentFolder, knownSelfSavingProvider, connectIMAP, loadSecrets
+};
 
 if (process.env.IMAP_MCP_NO_START !== '1') {
   main().catch(console.error);

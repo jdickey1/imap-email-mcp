@@ -1,6 +1,6 @@
 {
   "name": "@aylacullen/imap-email-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP server that gives Claude and other AI tools email access over IMAP/SMTP: read, search, organize, reply with attachments, and send. Extended fork with safety guardrails and Proton Mail Bridge support.",
   "type": "module",
   "main": "index.js",
