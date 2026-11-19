@@ -1,12 +1,20 @@
 {
-  "name": "imap-email-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for Claude Code that provides email capabilities through IMAP/SMTP. Read, search, compose, and manage emails from any IMAP provider.",
+  "name": "@aylacullen/imap-email-mcp",
+  "version": "1.1.0",
+  "description": "MCP server that gives Claude and other AI tools email access over IMAP/SMTP: read, search, organize, reply with attachments, and send. Extended fork with safety guardrails and Proton Mail Bridge support.",
   "type": "module",
   "main": "index.js",
   "bin": {
     "imap-email-mcp": "index.js"
   },
+  "files": [
+    "index.js",
+    "save-password.ps1",
+    "save-password.sh",
+    "signature.example.txt",
+    ".env.example",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "start": "node index.js"
   },
@@ -32,19 +40,22 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jdickey1/imap-email-mcp.git"
+    "url": "git+https://github.com/aylacullen/imap-email-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/jdickey1/imap-email-mcp/issues"
+    "url": "https://github.com/aylacullen/imap-email-mcp/issues"
   },
-  "homepage": "https://github.com/jdickey1/imap-email-mcp#readme",
+  "homepage": "https://github.com/aylacullen/imap-email-mcp#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "imap-simple": "^5.1.0",
     "mailparser": "^3.7.2",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "10.3.1"
   }
 }
