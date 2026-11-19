@@ -24,25 +24,19 @@ This is a fork of [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-ema
 
 ## Quick start (Claude Desktop)
 
-1. **Download and install** (with [Git](https://git-scm.com/)):
-   ```bash
-   git clone https://github.com/aylacullen/imap-email-mcp.git
-   cd imap-email-mcp
-   npm install
-   ```
-   Note the full path to the folder, e.g. `C:\Users\you\imap-email-mcp` or `/Users/you/imap-email-mcp`.
+Nothing to download by hand: Claude Desktop runs the server with `npx`, which fetches it from npm automatically.
+
+1. **Install [Node.js](https://nodejs.org/) 20 or newer** if you don't have it (`node --version` to check).
 
 2. **Open your Claude Desktop config:** Claude Desktop → **Settings → Developer → Edit Config**. This opens the right file even if it isn't in the usual place (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: usually `%APPDATA%\Claude\claude_desktop_config.json`).
 
-3. **Add the server** inside `"mcpServers"` (create that section if it doesn't exist), using the full path to `index.js`.
-
-   **macOS:**
+3. **Add the server** inside `"mcpServers"` (create that section if it doesn't exist):
    ```json
    {
      "mcpServers": {
        "imap-email": {
-         "command": "/opt/homebrew/bin/node",
-         "args": ["/Users/you/imap-email-mcp/index.js"],
+         "command": "npx",
+         "args": ["-y", "@aylacullen/imap-email-mcp"],
          "env": {
            "IMAP_USER": "you@example.com",
            "IMAP_PASSWORD": "your-app-password",
@@ -54,21 +48,17 @@ This is a fork of [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-ema
      }
    }
    ```
-   On a Mac, use the **full path to `node`**: run `which node` in Terminal and paste the result (often `/opt/homebrew/bin/node` or `/usr/local/bin/node`). Claude Desktop is opened from the Dock, not from Terminal, so it may not find a plain `"node"`.
-
-   **Windows:** the same, with `"command": "node"` and Windows paths with every backslash doubled:
-   ```json
-   "command": "node",
-   "args": ["C:\\Users\\you\\imap-email-mcp\\index.js"],
-   ```
+   **On a Mac**, use the **full path to `npx`** as the `"command"`: run `which npx` in Terminal and paste the result (often `/opt/homebrew/bin/npx` or `/usr/local/bin/npx`). Claude Desktop is opened from the Dock, not from Terminal, so it may not find a plain `"npx"`.
 
    You can keep the password out of this file entirely; see [Keeping your password out of the config](#keeping-your-password-out-of-the-config).
 
-4. **Optional signature:** copy `signature.example.txt` to `signature.txt` (same folder) and edit it. See [Signature](#signature).
+4. **Optional signature:** create `~/.imap-email-mcp/signature.txt` (Windows: `C:\Users\you\.imap-email-mcp\signature.txt`) with your sign-off. See [Signature](#signature).
 
-5. **Fully quit and reopen Claude Desktop** (including from the system tray). Settings are only read at startup.
+5. **Fully quit and reopen Claude Desktop** (on Windows, also from the system tray; on macOS, with Cmd+Q). Settings are only read at startup. The first start takes a little longer while npx downloads the server.
 
 Then ask Claude things like *"What's new in my inbox?"* or *"Draft a reply to that email saying I'm available Thursday."*
+
+**Note:** `npx -y imap-email-mcp` (without `@aylacullen/`) installs the **original** project, not this fork.
 
 ### Claude Code (CLI)
 
@@ -78,29 +68,34 @@ claude mcp add imap-email -s user \
   -e IMAP_PASSWORD='your-app-password' \
   -e IMAP_HOST=imap.example.com \
   -e SMTP_HOST=smtp.example.com \
-  -- node /full/path/to/imap-email-mcp/index.js
+  -- npx -y @aylacullen/imap-email-mcp
 ```
 
 Wrap the password in single quotes if it contains `%`, `^`, `*`, `$`, `!` or similar characters. Restart Claude Code afterwards. Check with `claude mcp get imap-email`; remove with `claude mcp remove imap-email -s user`.
 
 ### Cursor
 
-Add an MCP server named `imap-email`, type `command`, command `node /full/path/to/imap-email-mcp/index.js`, and set the same environment variables as above in Cursor's MCP settings.
+Add an MCP server named `imap-email`, type `command`, command `npx -y @aylacullen/imap-email-mcp`, and set the same environment variables as above in Cursor's MCP settings.
 
-### Without cloning (npx from GitHub)
+### Pinning a version
 
-You can also let `npx` download and run this fork straight from GitHub, with no clone or `npm install`:
-```json
-"command": "npx",
-"args": ["--allow-git=all", "-y", "github:aylacullen/imap-email-mcp#v1.1.0"]
+`npx -y @aylacullen/imap-email-mcp` always runs the newest release. To stay on a specific version until you choose to update, add it to the name, e.g. `"@aylacullen/imap-email-mcp@1.1.0"`.
+
+### Alternative: run from a clone
+
+If you'd rather have the code on disk (to read it, or change it):
+```bash
+git clone https://github.com/aylacullen/imap-email-mcp.git
+cd imap-email-mcp
+npm install
 ```
-- **`--allow-git=all` is required on npm 12 and newer**, which no longer installs packages from GitHub unless you allow it (you'd otherwise get an `EALLOWGIT` error). Older npm versions ignore the flag.
-- **`#v1.1.0` pins a specific release**, so the code only changes when you change that number. Leave it off to always run the newest version on `main`.
-- The first start takes a little longer while npx downloads and installs it.
-- On macOS, use the full path to `npx` (from `which npx`) as the `"command"`, for the same reason as `node` above.
-- Put your signature in `~/.imap-email-mcp/signature.txt` (see [Signature](#signature)).
+Then use `"command": "node"` (on a Mac, the full path from `which node`) and `"args": ["/full/path/to/imap-email-mcp/index.js"]` (on Windows, double every backslash: `"C:\\Users\\you\\imap-email-mcp\\index.js"`). With a clone you can also keep `signature.txt` next to `index.js`.
 
-Note: `npx -y imap-email-mcp` (without `github:`) installs the **original** package from npm, not this fork.
+<details>
+<summary>Running straight from GitHub with npx</summary>
+
+`"args": ["--allow-git=all", "-y", "github:aylacullen/imap-email-mcp#v1.1.0"]` also works. `--allow-git=all` is required on npm 12 and newer, which no longer installs packages from GitHub unless you allow it (otherwise you get an `EALLOWGIT` error). Installing from npm, as above, is simpler and faster.
+</details>
 
 ## Configuration
 
@@ -147,8 +142,8 @@ All settings go in the `env` block of your MCP config.
 The server adds your signature to the end of new emails, drafts and replies (above the quoted original in replies). It's skipped if the email already contains it, and you can ask for an email without it. It uses the first of these that exists:
 
 1. the file named by `SIGNATURE_FILE`
-2. `signature.txt` next to `index.js` (handy if you cloned the repo)
-3. `signature.txt` in `~/.imap-email-mcp/` (works for every install, including npx)
+2. `signature.txt` next to `index.js` (only if you cloned the repo)
+3. `signature.txt` in `~/.imap-email-mcp/` (works for every install; on Windows that's `C:\Users\you\.imap-email-mcp\`)
 
 Start from `signature.example.txt`. Your signature is never uploaded or included in updates.
 
@@ -198,31 +193,36 @@ Proton Mail works through [Proton Mail Bridge](https://proton.me/mail/bridge), w
 
 Instead of putting `IMAP_PASSWORD` in your config file, you can store it in your computer's own password store, where it's kept encrypted and tied to your user account:
 
-| | Password store | Setup script |
-|---|---|---|
-| **Windows** | Credential Manager | `save-password.ps1` |
-| **macOS** | Keychain | `save-password.sh` |
-| **Linux** | Secret Service keyring (GNOME Keyring / KWallet), via `secret-tool` | `save-password.sh` |
+| | Password store |
+|---|---|
+| **Windows** | Credential Manager |
+| **macOS** | Keychain |
+| **Linux** | Secret Service keyring (GNOME Keyring / KWallet), via `secret-tool` |
 
-1. In the `imap-email-mcp` folder, run the script for your system:
+1. **Save the password** with one built-in command. Each one asks for the password itself, without showing it as you type, so it never ends up in your command history. Replace `you@example.com` with your email address.
 
-   **Windows** (PowerShell):
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\save-password.ps1
+   **Windows** (Command Prompt or PowerShell):
    ```
-   **macOS / Linux** (Terminal):
+   cmdkey /generic:imap-email-mcp /user:you@example.com /pass
+   ```
+   **macOS** (Terminal; it asks twice):
    ```bash
-   bash save-password.sh
+   security add-generic-password -U -s imap-email-mcp -a you@example.com -w
    ```
-   It asks for your email address and password (the password isn't shown as you type) and saves it under the name `imap-email-mcp`. On a Mac, macOS itself asks for the password, so the script never sees it. On Linux, install `secret-tool` first if needed (`sudo apt install libsecret-tools`, `sudo dnf install libsecret`, or `sudo pacman -S libsecret`).
+   **Linux** (Terminal; install `secret-tool` first if needed: `sudo apt install libsecret-tools`, `sudo dnf install libsecret`, or `sudo pacman -S libsecret`):
+   ```bash
+   secret-tool store --label="imap-email-mcp" service imap-email-mcp account you@example.com
+   ```
 
-2. In your config, replace the `IMAP_PASSWORD` line with:
+2. **In your config**, replace the `IMAP_PASSWORD` line with:
    ```json
    "IMAP_PASSWORD_CREDENTIAL": "imap-email-mcp",
    ```
-3. Restart your MCP client.
+3. **Restart your MCP client.**
 
-To store more than one account, use a different name (`-Name work` on Windows, `--name work` on macOS/Linux); to delete a saved password, use `-Remove` / `--remove`. If your password changes, run the script again. You can also see the entry in **Credential Manager → Windows Credentials** (Windows) or **Keychain Access**, under the name you chose (macOS).
+To store more than one account, use a different name in both places (e.g. `imap-email-mcp-work`). If your password changes, run the command again. To remove a saved password: `cmdkey /delete:imap-email-mcp` (Windows), `security delete-generic-password -s imap-email-mcp` (macOS), or `secret-tool clear service imap-email-mcp` (Linux). You can also see the entry in **Credential Manager → Windows Credentials** (Windows) or **Keychain Access** (macOS).
+
+If you cloned the repo, `save-password.ps1` (Windows) and `save-password.sh` (macOS/Linux) do the same with a few extra checks, such as asking for the password twice and confirming it saved.
 
 What this protects against: the password no longer sits in a plain-text file that gets backed up, synced, copied, or read by other tools. It does not protect against malicious software already running under your user account.
 
@@ -277,7 +277,7 @@ What this protects against: the password no longer sits in a plain-text file tha
 
 **Authentication failed**: check the app password (or Bridge password for Proton) and that IMAP is enabled in your provider's settings. With `IMAP_PASSWORD_CREDENTIAL`, make sure the name matches what you saved.
 
-**"No saved password named ..."**: the name in `IMAP_PASSWORD_CREDENTIAL` doesn't match a saved entry. Run the save-password script again with that exact name. On Linux, the keyring must be unlocked (it normally unlocks when you log in).
+**"No saved password named ..."**: the name in `IMAP_PASSWORD_CREDENTIAL` doesn't match a saved entry. Save the password again with that exact name. On Linux, the keyring must be unlocked (it normally unlocks when you log in).
 
 **`self-signed certificate` error (Proton Bridge)**: `NODE_EXTRA_CA_CERTS` must point to Bridge's exported `cert.pem`, and it must be the current certificate.
 
@@ -291,13 +291,14 @@ What this protects against: the password no longer sits in a plain-text file tha
 
 ## Updating
 
+**npx (the quick start setup):** nothing to do; npx picks up new releases on its own. If you pinned a version (`@aylacullen/imap-email-mcp@1.1.0`), change the number to the new release.
+
 **Cloned:**
 ```bash
 cd imap-email-mcp
 git pull
 npm install
 ```
-**npx:** change the version in `#v1.1.0` to the new release (or, if you left it off, npx picks up the newest version on its own).
 
 Then restart your MCP client. Your signature and settings are not touched by updates.
 
@@ -309,6 +310,7 @@ Originally created by [jdickey1](https://github.com/jdickey1/imap-email-mcp). Th
 
 ## Links
 
+- [npm package](https://www.npmjs.com/package/@aylacullen/imap-email-mcp)
 - [Original project](https://github.com/jdickey1/imap-email-mcp)
 - [MCP Protocol](https://modelcontextprotocol.io/)
 - [Proton Mail Bridge](https://proton.me/mail/bridge)
