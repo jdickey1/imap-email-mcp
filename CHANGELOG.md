@@ -24,14 +24,14 @@ Changes in this fork compared to the original [jdickey1/imap-email-mcp](https://
 ### New settings
 - `FROM_NAME`: sender display name.
 - `SIGNATURE_FILE` (default `signature.txt` next to `index.js`): automatic signature on new emails, drafts and replies; skipped if already present; `include_signature: false` to turn off per email. Re-read on every use.
-- `IMAP_PASSWORD_CREDENTIAL`: read the password from Windows Credential Manager instead of the config file. Includes `save-password.ps1` to save it securely.
+- `IMAP_PASSWORD_CREDENTIAL`: read the password from the computer's password store instead of the config file: Windows Credential Manager, macOS Keychain, or the Linux Secret Service keyring (`secret-tool`). Includes `save-password.ps1` (Windows) and `save-password.sh` (macOS/Linux) to save it securely.
 - `SMTP_REQUIRE_TLS`: refuse to send unless SMTP upgrades to TLS.
 - `ATTACHMENT_DIR`, `ATTACHMENT_BLOCK_DIRS`.
 
 ### Security
 - Upgraded nodemailer 6.10 → 10.3.1, fixing 22 published advisories (including address-parsing bugs that could deliver a reply to a different domain than shown).
 - All single email IDs must be positive whole numbers; ID lists are validated (max 500). Prevents IMAP sequence sets like `1:*` ("every message") from reaching delete/update operations.
-- Attachments are refused from AppData, ProgramData, the Windows folder, hidden dot-folders in the user folder, the server's own folder, and key/certificate/password/settings files, checked by real path (symlinks, junctions and `..` resolved).
+- Attachments are refused from system and app-settings folders (Windows: AppData, ProgramData, Windows; macOS: `~/Library`, `/Library`, `/System`, `/etc`, `/var`, `/usr`; Linux: `/etc`, `/proc`, `/sys`, `/var`, `/usr`, `/root`, ...), hidden dot-folders in the user folder, the server's own folder, and key/certificate/password/settings files, checked by real path (symlinks, junctions and `..` resolved). Case-insensitive on Windows/macOS, case-sensitive on Linux.
 - Downloads can only be saved inside the Downloads folder (or `ATTACHMENT_DIR`), checked by real path.
 - Reply references no longer include Proton-internal message IDs.
 
@@ -42,6 +42,9 @@ Changes in this fork compared to the original [jdickey1/imap-email-mcp](https://
 
 ### Requirements
 - Node.js 20 or newer (required by nodemailer 10).
+
+### Platforms
+- Windows, macOS and Linux. The macOS and Linux password-store and blocklist rules are covered by automated checks but have not yet been tried on a real Mac or Linux machine; reports welcome.
 
 ### Known limitations
 - IMAP STARTTLS (`autotls`) is not supported: the `imap` library's STARTTLS upgrade crashes on current Node. Use implicit TLS (`IMAP_TLS=true`, e.g. Proton Bridge in SSL mode).

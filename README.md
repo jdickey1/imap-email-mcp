@@ -13,7 +13,8 @@ This is a fork of [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-ema
 - **Better search**: dates, unread, starred, has-attachment, recipient, search every folder at once, with one-line previews
 - **Your name and signature**: a display name for the From line and an automatic signature from a text file
 - **Safer by default**: delete goes to Trash, strict email-ID checks, sensitive files can't be attached, downloads stay in Downloads
-- **Password in Windows Credential Manager** instead of plain text in your config (optional)
+- **Password in your computer's password store** (Windows Credential Manager, macOS Keychain, or Linux keyring) instead of plain text in your config (optional)
+- **Works on Windows, macOS and Linux**
 - **Up-to-date dependencies**: nodemailer 10 fixes 22 published security advisories in the version the original used
 
 ## Requirements
@@ -31,15 +32,17 @@ This is a fork of [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-ema
    ```
    Note the full path to the folder, e.g. `C:\Users\you\imap-email-mcp` or `/Users/you/imap-email-mcp`.
 
-2. **Open your Claude Desktop config:** Claude Desktop → **Settings → Developer → Edit Config**. (This opens the right file even if it isn't in the usual place.)
+2. **Open your Claude Desktop config:** Claude Desktop → **Settings → Developer → Edit Config**. This opens the right file even if it isn't in the usual place (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: usually `%APPDATA%\Claude\claude_desktop_config.json`).
 
-3. **Add the server** inside `"mcpServers"` (create that section if it doesn't exist). Use the full path to `index.js`; on Windows, double every backslash:
+3. **Add the server** inside `"mcpServers"` (create that section if it doesn't exist), using the full path to `index.js`.
+
+   **macOS:**
    ```json
    {
      "mcpServers": {
        "imap-email": {
-         "command": "node",
-         "args": ["C:\\Users\\you\\imap-email-mcp\\index.js"],
+         "command": "/opt/homebrew/bin/node",
+         "args": ["/Users/you/imap-email-mcp/index.js"],
          "env": {
            "IMAP_USER": "you@example.com",
            "IMAP_PASSWORD": "your-app-password",
@@ -51,7 +54,15 @@ This is a fork of [jdickey1/imap-email-mcp](https://github.com/jdickey1/imap-ema
      }
    }
    ```
-   On Windows you can keep the password out of this file entirely; see [Keeping your password out of the config](#keeping-your-password-out-of-the-config-windows).
+   On a Mac, use the **full path to `node`**: run `which node` in Terminal and paste the result (often `/opt/homebrew/bin/node` or `/usr/local/bin/node`). Claude Desktop is opened from the Dock, not from Terminal, so it may not find a plain `"node"`.
+
+   **Windows:** the same, with `"command": "node"` and Windows paths with every backslash doubled:
+   ```json
+   "command": "node",
+   "args": ["C:\\Users\\you\\imap-email-mcp\\index.js"],
+   ```
+
+   You can keep the password out of this file entirely; see [Keeping your password out of the config](#keeping-your-password-out-of-the-config).
 
 4. **Optional signature:** copy `signature.example.txt` to `signature.txt` (same folder) and edit it.
 
@@ -94,7 +105,7 @@ All settings go in the `env` block of your MCP config.
 | Setting | Description |
 |---------|-------------|
 | `IMAP_USER` | Your email address |
-| `IMAP_PASSWORD` | Your app password. Or, on Windows, use `IMAP_PASSWORD_CREDENTIAL` instead (below) |
+| `IMAP_PASSWORD` | Your app password. Or use `IMAP_PASSWORD_CREDENTIAL` instead (below) |
 | `IMAP_HOST` | IMAP server hostname |
 
 ### Connection (optional)
@@ -117,10 +128,10 @@ All settings go in the `env` block of your MCP config.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `FROM_NAME` | (none) | Name shown as the sender, e.g. `Jane Doe` → `Jane Doe <you@example.com>`. Keep it under ~18 characters so inbox lists don't cut it off |
-| `IMAP_PASSWORD_CREDENTIAL` | (none) | **Windows only.** Name of a saved Windows Credential Manager entry holding your password (see below) |
+| `IMAP_PASSWORD_CREDENTIAL` | (none) | Name of a password saved in Windows Credential Manager, the macOS Keychain, or the Linux keyring, used instead of `IMAP_PASSWORD` (see below) |
 | `SIGNATURE_FILE` | `signature.txt` next to `index.js` | Text file whose contents are added to the end of new emails, drafts and replies. Edits apply immediately, no restart |
 | `ATTACHMENT_DIR` | `~/Downloads/Email Attachments` | Where `download_attachment` saves files (must be inside Downloads, or this folder) |
-| `ATTACHMENT_BLOCK_DIRS` | (none) | Extra folders that may never be attached, separated by `;` |
+| `ATTACHMENT_BLOCK_DIRS` | (none) | Extra folders that may never be attached, separated by `;` on Windows or `:` on macOS/Linux |
 
 **Restart your MCP client after changing any setting.** (Except the signature file, which is re-read every time.)
 
@@ -154,34 +165,49 @@ Proton Mail works through [Proton Mail Bridge](https://proton.me/mail/bridge), w
      "SMTP_HOST": "127.0.0.1",
      "SMTP_PORT": "1025",
      "SMTP_SECURE": "true",
-     "NODE_EXTRA_CA_CERTS": "C:\\path\\to\\cert.pem",
+     "NODE_EXTRA_CA_CERTS": "/Users/you/bridge-cert/cert.pem",
      "FROM_NAME": "Your Name"
    }
    ```
+   (On Windows, the certificate path looks like `"C:\\Users\\you\\bridge-cert\\cert.pem"`.)
 
 **Proton notes**
+- **macOS:** Bridge may offer to add its certificate to your Keychain. That helps apps like Apple Mail, but Node doesn't use the Keychain for certificates, so you still need the exported `cert.pem` and `NODE_EXTRA_CA_CERTS`.
 - **Sender name:** emails sent directly use `FROM_NAME`. **Drafts** saved to Proton take your Proton display name instead (Proton → Settings → Identity and addresses), so set both to the same name.
 - **Reply drafts:** Proton strips threading headers from saved drafts. This server remembers them locally (`draft-threading.json`), so a reply draft sent with `send_draft` still lands in the right conversation. If you send it from the Proton app instead, Proton's own threading applies.
 - If Bridge ever regenerates its certificate (e.g. after a reset), export `cert.pem` again to the same place.
 
-## Keeping your password out of the config (Windows)
+## Keeping your password out of the config
 
-Instead of putting `IMAP_PASSWORD` in your config file, you can store it in Windows Credential Manager, where Windows keeps it encrypted and tied to your Windows account:
+Instead of putting `IMAP_PASSWORD` in your config file, you can store it in your computer's own password store, where it's kept encrypted and tied to your user account:
 
-1. In the `imap-email-mcp` folder, run:
+| | Password store | Setup script |
+|---|---|---|
+| **Windows** | Credential Manager | `save-password.ps1` |
+| **macOS** | Keychain | `save-password.sh` |
+| **Linux** | Secret Service keyring (GNOME Keyring / KWallet), via `secret-tool` | `save-password.sh` |
+
+1. In the `imap-email-mcp` folder, run the script for your system:
+
+   **Windows** (PowerShell):
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\save-password.ps1
    ```
-   It asks for your email address and password (the password isn't shown as you type) and saves it under the name `imap-email-mcp`.
+   **macOS / Linux** (Terminal):
+   ```bash
+   bash save-password.sh
+   ```
+   It asks for your email address and password (the password isn't shown as you type) and saves it under the name `imap-email-mcp`. On a Mac, macOS itself asks for the password, so the script never sees it. On Linux, install `secret-tool` first if needed (`sudo apt install libsecret-tools`, `sudo dnf install libsecret`, or `sudo pacman -S libsecret`).
+
 2. In your config, replace the `IMAP_PASSWORD` line with:
    ```json
    "IMAP_PASSWORD_CREDENTIAL": "imap-email-mcp",
    ```
 3. Restart your MCP client.
 
-Use `-Name something-else` to store more than one account, and `-Remove` to delete a saved password. You can also see the entry in **Control Panel → Credential Manager → Windows Credentials**. If your password changes, run the script again.
+To store more than one account, use a different name (`-Name work` on Windows, `--name work` on macOS/Linux); to delete a saved password, use `-Remove` / `--remove`. If your password changes, run the script again. You can also see the entry in **Credential Manager → Windows Credentials** (Windows) or **Keychain Access**, under the name you chose (macOS).
 
-What this protects against: the password no longer sits in a plain-text file that gets backed up, synced, copied, or read by other tools. It does not protect against malicious software already running under your Windows account.
+What this protects against: the password no longer sits in a plain-text file that gets backed up, synced, copied, or read by other tools. It does not protect against malicious software already running under your user account.
 
 ## Available tools
 
@@ -217,15 +243,24 @@ What this protects against: the password no longer sits in a plain-text file tha
 - **Review before sending:** ask for a draft first (`create_draft` / `reply_email` with `mode: draft`), then `send_draft` sends exactly what you reviewed.
 - **Delete is recoverable:** emails go to Trash unless you explicitly ask for permanent deletion.
 - **Strict email IDs:** every tool only accepts single whole-number IDs, so a malformed ID like `1:*` (IMAP for "every message") can never hit a whole folder.
-- **No sensitive attachments:** files in AppData, ProgramData, the Windows folder, hidden settings folders (`.ssh`, `.aws`, ...), the server's own folder, and key/certificate/password files (`.pem`, `.key`, `.pfx`, `.kdbx`, `.env`, `claude_desktop_config.json`, SSH keys, ...) are always refused. Paths are checked by their real location, so shortcuts and `..` tricks don't get around it. This matters because an email you ask Claude to read could contain instructions trying to trick it.
+- **No sensitive attachments:** these are always refused:
+  - system and app-settings folders: **Windows** AppData, ProgramData and the Windows folder; **macOS** `~/Library` (app settings, keychains, the Claude config), `/Library`, `/System`, `/etc`, `/var`, `/usr`; **Linux** `/etc`, `/proc`, `/sys`, `/var`, `/usr`, `/root` and similar
+  - hidden settings folders in your user folder (`.ssh`, `.aws`, `.config`, `.gnupg`, ...) and the server's own folder
+  - key/certificate/password files (`.pem`, `.key`, `.pfx`, `.kdbx`, keychains, `.env`, `claude_desktop_config.json`, SSH keys, ...)
+
+  Paths are checked by their real location, so shortcuts, symlinks and `..` tricks don't get around it. This matters because an email you ask Claude to read could contain instructions trying to trick it.
 - **Downloads stay in Downloads:** attachments can't be saved anywhere else (e.g. your Startup folder), and existing files are never overwritten.
 - **Size and volume limits:** attachments are capped at 25 MB per email, results at 100 per request, bulk actions at 500 emails.
 
 ## Troubleshooting
 
-**Tools don't show up, or old behavior persists**: fully quit the MCP client (including the system tray) and reopen it. Settings are only read at startup.
+**Tools don't show up, or old behavior persists**: fully quit the MCP client (on Windows, also from the system tray; on macOS, with Cmd+Q) and reopen it. Settings are only read at startup.
+
+**"spawn node ENOENT" or the server disconnects immediately (macOS)**: Claude Desktop can't find Node. Set `"command"` to the full path from `which node` (for example `/opt/homebrew/bin/node`).
 
 **Authentication failed**: check the app password (or Bridge password for Proton) and that IMAP is enabled in your provider's settings. With `IMAP_PASSWORD_CREDENTIAL`, make sure the name matches what you saved.
+
+**"No saved password named ..."**: the name in `IMAP_PASSWORD_CREDENTIAL` doesn't match a saved entry. Run the save-password script again with that exact name. On Linux, the keyring must be unlocked (it normally unlocks when you log in).
 
 **`self-signed certificate` error (Proton Bridge)**: `NODE_EXTRA_CA_CERTS` must point to Bridge's exported `cert.pem`, and it must be the current certificate.
 

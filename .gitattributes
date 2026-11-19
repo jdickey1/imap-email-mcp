@@ -1,0 +1,2 @@
+# Keep Unix line endings for shell scripts, so they run on macOS/Linux even if committed from Windows
+*.sh text eol=lf

@@ -36,7 +36,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($env:OS -ne 'Windows_NT') {
-  Write-Error 'Windows Credential Manager is only available on Windows. On macOS/Linux, use IMAP_PASSWORD in your config instead.'
+  Write-Error 'This script is for Windows. On macOS or Linux, run: bash save-password.sh'
 }
 
 Add-Type -TypeDefinition @'

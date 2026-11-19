@@ -73,7 +73,7 @@ const DEFAULT_ATTACHMENT_DIR = process.env.ATTACHMENT_DIR
 // Shared JSON schema for the `attachments` argument
 const ATTACHMENTS_SCHEMA = {
   type: 'array',
-  description: 'Files to attach. Each item is an absolute file path, or an object { path, filename } to rename the attachment. Files in AppData, ProgramData, Windows, hidden settings folders, and key/certificate/password files are always refused.',
+  description: 'Files to attach. Each item is an absolute file path, or an object { path, filename } to rename the attachment. System and app-settings folders (Windows: AppData, ProgramData, Windows; macOS: ~/Library, /Library, /System, /etc...; Linux: /etc, /var...), hidden settings folders, and key/certificate/password files are always refused.',
   items: {
     anyOf: [
       { type: 'string' },
@@ -90,35 +90,68 @@ const ATTACHMENTS_SCHEMA = {
 };
 
 // ---- Local addition (local.5): never attach secrets or system files ----
-// Checked against each file's REAL location (shortcuts/junctions resolved), so links can't get around it.
+// Checked against each file's REAL location (shortcuts/junctions/symlinks resolved), so links can't get around it.
+// Rules are per operating system; `platform` etc. are parameters so they can be tested on any OS.
 const SENSITIVE_NAME_PATTERNS = [
   /^claude_desktop_config\.json$/i,           // holds MCP settings (and formerly passwords)
   /^\.env(\..*)?$/i,                          // app secrets
-  /\.(pem|key|pfx|p12|ppk|kdbx|keychain|ovpn)$/i, // keys, certificates, password vaults, VPN profiles
+  /\.(pem|key|pfx|p12|ppk|kdbx|ovpn)$/i,      // keys, certificates, password vaults, VPN profiles
+  /\.keychain(-db)?$/i,                       // macOS keychains
   /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/i,    // SSH keys
   /^(credentials|secrets?)(\.\w+)?$/i,
   /^ntuser\.(dat|ini|pol)/i                   // Windows profile hive
 ];
-function attachmentBlockReason(realPath) {
-  const lower = realPath.toLowerCase();
-  const home = os.homedir();
+
+// Path rules differ by OS: Windows paths and case-insensitive; macOS case-insensitive; Linux case-sensitive
+const pathApi = platform => (platform === 'win32' ? path.win32 : path.posix);
+const foldCase = platform => (platform === 'win32' || platform === 'darwin' ? s => s.toLowerCase() : s => s);
+
+function isInside(child, parent, platform = process.platform) {
+  const P = pathApi(platform), f = foldCase(platform);
+  const rel = P.relative(f(parent), f(child));
+  return rel === '' || (!rel.startsWith('..') && !P.isAbsolute(rel));
+}
+
+function blockedDirsFor(platform, home, env) {
+  const P = pathApi(platform);
+  if (platform === 'win32') {
+    return [
+      [env.APPDATA, 'AppData (app settings and saved logins)'],
+      [env.LOCALAPPDATA, 'AppData (app settings and saved logins)'],
+      [env.PROGRAMDATA, 'ProgramData (system app data)'],
+      [env.SystemRoot || 'C:\\Windows', 'the Windows system folder']
+    ];
+  }
+  if (platform === 'darwin') {
+    return [
+      [P.join(home, 'Library'), 'your Library folder (app settings, keychains and saved logins)'],
+      ['/Library', 'the system Library folder'],
+      ['/System', 'the macOS system folder'],
+      ...['/etc', '/private/etc', '/var', '/private/var', '/usr', '/bin', '/sbin'].map(d => [d, 'a macOS system folder'])
+    ];
+  }
+  // Linux and other Unix-like systems
+  return ['/etc', '/proc', '/sys', '/dev', '/boot', '/root', '/var', '/usr', '/bin', '/sbin', '/lib', '/lib64', '/run', '/snap']
+    .map(d => [d, 'a system folder']);
+}
+
+function attachmentBlockReason(realPath, { platform = process.platform, home = os.homedir(), env = process.env, serverDir = SERVER_DIR } = {}) {
+  const P = pathApi(platform), f = foldCase(platform);
+  const extra = (env.ATTACHMENT_BLOCK_DIRS || '').split(platform === 'win32' ? ';' : ':').filter(Boolean);
   const blockedDirs = [
-    [process.env.APPDATA, 'AppData (app settings and saved logins)'],
-    [process.env.LOCALAPPDATA, 'AppData (app settings and saved logins)'],
-    [process.env.PROGRAMDATA, 'ProgramData (system app data)'],
-    [process.env.SystemRoot || 'C:\\Windows', 'the Windows system folder'],
-    [SERVER_DIR, 'the email server\'s own folder'],
-    ...(process.env.ATTACHMENT_BLOCK_DIRS || '').split(';').filter(Boolean).map(d => [d, 'a blocked folder'])
+    ...blockedDirsFor(platform, home, env),
+    [serverDir, 'the email server\'s own folder'],
+    ...extra.map(d => [d, 'a blocked folder'])
   ].filter(([d]) => d);
   for (const [dir, label] of blockedDirs) {
-    if (isInside(lower, path.resolve(dir))) return `it is inside ${label}`;
+    if (isInside(realPath, P.resolve(dir), platform)) return `it is inside ${label}`;
   }
-  // Hidden "dot" folders in your user folder (.ssh, .aws, .claude, .config, ...)
-  const rel = path.relative(home.toLowerCase(), lower);
-  if (rel && !rel.startsWith('..') && !path.isAbsolute(rel) && rel.split(path.sep).some(seg => seg.startsWith('.'))) {
+  // Hidden "dot" folders in your user folder (.ssh, .aws, .claude, .config, .gnupg, ...)
+  const rel = P.relative(f(home), f(realPath));
+  if (rel && !rel.startsWith('..') && !P.isAbsolute(rel) && rel.split(P.sep).some(seg => seg.startsWith('.'))) {
     return 'it is inside a hidden settings folder in your user folder';
   }
-  const name = path.basename(realPath);
+  const name = P.basename(realPath);
   if (SENSITIVE_NAME_PATTERNS.some(re => re.test(name))) return 'it looks like a key, certificate, password or settings file';
   return null;
 }
@@ -173,10 +206,6 @@ function clampLimit(value, fallback = 20) {
 
 // Downloads may only be saved inside the user's Downloads folder (or ATTACHMENT_DIR if set)
 const DOWNLOAD_ROOTS = [path.join(os.homedir(), 'Downloads'), DEFAULT_ATTACHMENT_DIR].map(p => path.resolve(p));
-function isInside(child, parent) {
-  const rel = path.relative(parent.toLowerCase(), child.toLowerCase());
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-}
 function safeSaveDir(requested) {
   const dir = path.resolve(requested || DEFAULT_ATTACHMENT_DIR);
   if (!DOWNLOAD_ROOTS.some(root => isInside(dir, root))) {
@@ -510,9 +539,10 @@ const UIDS_SCHEMA = {
   uids: { type: 'array', items: { type: 'number' }, description: 'Several email UIDs (instead of, or along with, uid)' }
 };
 
-// ---- Local addition (local.5): password from Windows Credential Manager ----
-// Set IMAP_PASSWORD_CREDENTIAL to a Generic credential's name instead of putting IMAP_PASSWORD in the config.
-// Node can't call the Windows credential API directly, so a tiny PowerShell step (full system path,
+// ---- Local addition (local.5): password from the OS password store ----
+// Set IMAP_PASSWORD_CREDENTIAL to a saved entry's name instead of putting IMAP_PASSWORD in the config.
+// Windows: Credential Manager (Generic credential). macOS: Keychain. Linux: Secret Service (secret-tool).
+// On Windows, Node can't call the credential API directly, so a tiny PowerShell step (full system path,
 // no profile) calls CredRead and hands the password back over a pipe. It is never written to disk or logged.
 const CREDMAN_CS = `
 using System;
@@ -562,10 +592,44 @@ function readWindowsCredential(target) {
   }
 }
 
+// macOS Keychain: items saved with `security add-generic-password -s <name>` (see save-password.sh).
+// Linux: Secret Service keyring via `secret-tool` (GNOME Keyring / KWallet).
+function readStoredPassword(name, platform = process.platform) {
+  const firstLine = e => (e.stderr || e.message || '').toString().trim().split('\n')[0];
+  const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] });
+
+  if (platform === 'win32') return readWindowsCredential(name);
+
+  if (platform === 'darwin') {
+    try {
+      // -w prints only the password (plus one trailing newline, removed here)
+      return run('/usr/bin/security', ['find-generic-password', '-s', name, '-w']).replace(/\r?\n$/, '');
+    } catch (e) {
+      if (e.status === 44) throw new Error(`No saved password named "${name}" in the macOS Keychain`);
+      throw new Error(`Could not read the password from the macOS Keychain (${firstLine(e)})`);
+    }
+  }
+
+  if (platform === 'linux') {
+    const tool = fs.existsSync('/usr/bin/secret-tool') ? '/usr/bin/secret-tool' : 'secret-tool';
+    let out;
+    try {
+      out = run(tool, ['lookup', 'service', name]);
+    } catch (e) {
+      if (e.code === 'ENOENT') throw new Error('secret-tool is not installed (package "libsecret-tools" / "libsecret"). Install it, or use IMAP_PASSWORD instead');
+      throw new Error(`No saved password named "${name}" in your keyring, or the keyring is locked (${firstLine(e)})`);
+    }
+    if (!out) throw new Error(`No saved password named "${name}" in your keyring`);
+    return out.replace(/\r?\n$/, '');
+  }
+
+  throw new Error(`IMAP_PASSWORD_CREDENTIAL is not supported on ${platform}. Use IMAP_PASSWORD instead`);
+}
+
 function loadSecrets() {
   const target = process.env.IMAP_PASSWORD_CREDENTIAL;
   if (!process.env.IMAP_PASSWORD && target) {
-    const password = readWindowsCredential(target);
+    const password = readStoredPassword(target);
     IMAP_CONFIG.imap.password = password;
     if (!process.env.SMTP_PASSWORD) SMTP_CONFIG.auth.pass = password;
   }
@@ -1717,4 +1781,10 @@ async function main() {
   console.error('IMAP Email MCP Server running on stdio');
 }
 
-main().catch(console.error);
+// Exported only so the platform-specific safety rules can be tested; the server starts as usual.
+// IMAP_MCP_NO_START=1 lets a test import this file without starting the server.
+export { attachmentBlockReason, isInside, readStoredPassword, requireUid };
+
+if (process.env.IMAP_MCP_NO_START !== '1') {
+  main().catch(console.error);
+}
